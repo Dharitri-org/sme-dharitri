@@ -1,0 +1,104 @@
+package factory
+
+import (
+	"fmt"
+
+	"github.com/Dharitri-org/sme-dharitri/config"
+	"github.com/Dharitri-org/sme-dharitri/core"
+	"github.com/Dharitri-org/sme-dharitri/core/check"
+	"github.com/Dharitri-org/sme-dharitri/debug/antiflood"
+	"github.com/Dharitri-org/sme-dharitri/marshal"
+	"github.com/Dharitri-org/sme-dharitri/p2p/libp2p"
+	"github.com/Dharitri-org/sme-dharitri/process"
+	antifloodFactory "github.com/Dharitri-org/sme-dharitri/process/throttle/antiflood/factory"
+)
+
+type networkComponentsFactory struct {
+	p2pConfig     config.P2PConfig
+	mainConfig    config.Config
+	statusHandler core.AppStatusHandler
+	listenAddress string
+	marshalizer   marshal.Marshalizer
+}
+
+// NewNetworkComponentsFactory returns a new instance of a network components factory
+func NewNetworkComponentsFactory(
+	p2pConfig config.P2PConfig,
+	mainConfig config.Config,
+	statusHandler core.AppStatusHandler,
+	marshalizer marshal.Marshalizer,
+) (*networkComponentsFactory, error) {
+	if check.IfNil(statusHandler) {
+		return nil, ErrNilStatusHandler
+	}
+	if check.IfNil(marshalizer) {
+		return nil, fmt.Errorf("%w in NewNetworkComponentsFactory", ErrNilMarshalizer)
+	}
+
+	return &networkComponentsFactory{
+		p2pConfig:     p2pConfig,
+		marshalizer:   marshalizer,
+		mainConfig:    mainConfig,
+		statusHandler: statusHandler,
+		listenAddress: libp2p.ListenAddrWithIp4AndTcp,
+	}, nil
+}
+
+// Create creates and returns the network components
+func (ncf *networkComponentsFactory) Create() (*NetworkComponents, error) {
+	arg := libp2p.ArgsNetworkMessenger{
+		Marshalizer:   ncf.marshalizer,
+		ListenAddress: ncf.listenAddress,
+		P2pConfig:     ncf.p2pConfig,
+	}
+
+	netMessenger, err := libp2p.NewNetworkMessenger(arg)
+	if err != nil {
+		return nil, err
+	}
+
+	inAntifloodHandler, peerIdBlackList, pkTimeCache, errNewAntiflood := antifloodFactory.NewP2PAntiFloodAndBlackList(
+		ncf.mainConfig,
+		ncf.statusHandler,
+		netMessenger.ID(),
+	)
+	if errNewAntiflood != nil {
+		return nil, errNewAntiflood
+	}
+
+	if ncf.mainConfig.Debug.Antiflood.Enabled {
+		var debugger process.AntifloodDebugger
+		debugger, err = antiflood.NewAntifloodDebugger(ncf.mainConfig.Debug.Antiflood)
+		if err != nil {
+			return nil, err
+		}
+
+		err = inAntifloodHandler.SetDebugger(debugger)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	inputAntifloodHandler, ok := inAntifloodHandler.(P2PAntifloodHandler)
+	if !ok {
+		return nil, fmt.Errorf("%w when casting input antiflood handler to structs/P2PAntifloodHandler", ErrWrongTypeAssertion)
+	}
+
+	outAntifloodHandler, errOutputAntiflood := antifloodFactory.NewP2POutputAntiFlood(ncf.mainConfig)
+	if errOutputAntiflood != nil {
+		return nil, errOutputAntiflood
+	}
+
+	outputAntifloodHandler, ok := outAntifloodHandler.(P2PAntifloodHandler)
+	if !ok {
+		return nil, fmt.Errorf("%w when casting output antiflood handler to structs/P2PAntifloodHandler", ErrWrongTypeAssertion)
+	}
+
+	return &NetworkComponents{
+		NetMessenger:           netMessenger,
+		InputAntifloodHandler:  inputAntifloodHandler,
+		OutputAntifloodHandler: outputAntifloodHandler,
+		PeerBlackListHandler:   peerIdBlackList,
+		PkTimeCache:            pkTimeCache,
+	}, nil
+}

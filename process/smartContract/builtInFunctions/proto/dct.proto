@@ -1,0 +1,14 @@
+
+syntax = "proto3";
+
+package protoBuiltInFunctions;
+
+option go_package = "builtInFunctions";
+option (gogoproto.stable_marshaler_all) = true;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+// DCToken holds the data for a dharitri standard digital token transaction
+message DCToken {
+	bytes    Value     = 1 [(gogoproto.jsontag) = "value", (gogoproto.casttypewith) = "math/big.Int;github.com/Dharitri-org/sme-dharitri/data.BigIntCaster"];
+}

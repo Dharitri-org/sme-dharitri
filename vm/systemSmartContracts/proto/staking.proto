@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "systemSmartContracts";
+option (gogoproto.stable_marshaler_all) = true;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+message StakedData {
+	uint64   RegisterNonce = 1 [(gogoproto.jsontag) = "RegisterNonce"];
+	uint64   StakedNonce   = 2 [(gogoproto.jsontag) = "StakedNonce"];
+	bool     Staked        = 3 [(gogoproto.jsontag) = "Staked"];
+	uint64   UnStakedNonce = 4 [(gogoproto.jsontag) = "UnStakedNonce"];
+	uint32   UnStakedEpoch = 5 [(gogoproto.jsontag) = "UnStakedEpoch"];
+	bytes    RewardAddress = 6 [(gogoproto.jsontag) = "RewardAddress"];
+	bytes    StakeValue    = 7 [(gogoproto.jsontag) = "StakeValue", (gogoproto.casttypewith) = "math/big.Int;github.com/Dharitri-org/sme-dharitri/data.BigIntCaster"];
+	uint64   JailedRound   = 8 [(gogoproto.jsontag) = "JailedRound"];
+	uint64   JailedNonce   = 9 [(gogoproto.jsontag) = "JailedNonce"];
+	uint64   UnJailedNonce = 10 [(gogoproto.jsontag) = "UnJailedNonce"];
+}
+
+message StakingNodesConfig {
+	int64 MinNumNodes = 1 [(gogoproto.jsontag) = "MinNumNodes"];
+	int64 StakedNodes = 2 [(gogoproto.jsontag) = "StakedNodes"];
+	int64 JailedNodes = 3 [(gogoproto.jsontag) = "JailedNodes"];
+}
