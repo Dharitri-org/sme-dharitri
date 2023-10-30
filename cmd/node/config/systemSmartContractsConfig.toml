@@ -1,0 +1,10 @@
+[DCTSystemSCConfig]
+    BaseIssuingCost = "5000000000000000000000" #5000MOA
+    OwnerAddress = "moa1932eft30w753xyvme8d49qejgkjc09n5e49w4mwdjtm0neld797su0dlxp"
+
+[GovernanceSystemSCConfig]
+	ProposalCost = "5000000000000000000000" #5000MOA
+	NumNodes     = 500
+	MinQuorum    = 400
+	MinPassThreshold = 300
+	MinVetoThreshold = 50
