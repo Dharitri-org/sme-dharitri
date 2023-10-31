@@ -9,7 +9,10 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/data"
 	"github.com/Dharitri-org/sme-dharitri/data/block"
 	"github.com/Dharitri-org/sme-dharitri/statusHandler"
+	logger "github.com/Dharitri-org/sme-logger"
 )
+
+var log = logger.GetOrCreate("statistics")
 
 // defaultBlockNumber is used to identify the default value of the value representing the block number fetched from storage.
 // it is used to signal that no value was read from storage and the check for not updating total number of processed
@@ -302,6 +305,16 @@ func (s *TpsBenchmark) updateStatistics(header *block.MetaBlock) error {
 			peakTPS:          shardPeakTPS,
 			lastBlockTxCount: header.TxCount,
 		}
+
+		log.Debug("TpsBenchmark.updateStatistics",
+			"shard", updatedShardStats.shardID,
+			"block", updatedShardStats.currentBlockNonce,
+			"avgTPS", updatedShardStats.averageTPS,
+			"peakTPS", updatedShardStats.peakTPS,
+			"lastBlockTxCount", updatedShardStats.lastBlockTxCount,
+			"avgBlockTxCount", updatedShardStats.averageBlockTxCount,
+			"totalProcessedTxCount", updatedShardStats.totalProcessedTxCount,
+		)
 
 		s.shardStatistics[shardInfo.ShardID] = updatedShardStats
 	}

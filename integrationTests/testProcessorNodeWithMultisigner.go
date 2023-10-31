@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Dharitri-org/sme-dharitri/crypto/peerSignatureHandler"
+	"github.com/Dharitri-org/sme-dharitri/storage/storageUnit"
+
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
 	"github.com/Dharitri-org/sme-dharitri/crypto"
@@ -54,6 +57,7 @@ func NewTestProcessorNodeWithCustomNodesCoordinator(
 		NodesSetup:              nodeSetup,
 		RatingsData:             ratingsData,
 		MinTransactionVersion:   MinTransactionVersion,
+		HistoryRepository:       &mock.HistoryRepositoryStub{},
 	}
 
 	tpn.NodeKeys = cp.Keys[nodeShardId][keyIndex]
@@ -235,6 +239,7 @@ func CreateNodeWithBLSAndTxKeys(
 		NodesSetup:              nodesSetup,
 		RatingsData:             ratingsData,
 		MinTransactionVersion:   MinTransactionVersion,
+		HistoryRepository:       &mock.HistoryRepositoryStub{},
 	}
 
 	tpn.NodeKeys = cp.Keys[shardId][keyIndex]
@@ -273,6 +278,9 @@ func CreateNodeWithBLSAndTxKeys(
 	twa.KeygenTxSign = keyGen
 	twa.KeygenBlockSign = &mock.KeyGenMock{}
 	twa.Address = twa.PkTxSignBytes
+
+	peerSigCache, _ := storageUnit.NewCache(storageUnit.CacheConfig{Type: storageUnit.LRUCache, Capacity: 1000})
+	twa.PeerSigHandler, _ = peerSignatureHandler.NewPeerSignatureHandler(peerSigCache, twa.SingleSigner, keyGen)
 	tpn.OwnAccount = twa
 
 	tpn.EpochStartNotifier = epochStartSubscriber
@@ -302,9 +310,16 @@ func CreateNodesWithNodesCoordinatorFactory(
 	waitingMap := GenValidatorsFromPubKeys(pubKeysWaiting, uint32(nbShards))
 	waitingMapForNodesCoordinator, _ := sharding.NodesInfoToValidators(waitingMap)
 
-	nodesSetup := &mock.NodesSetupStub{InitialNodesInfoCalled: func() (m map[uint32][]sharding.GenesisNodeInfoHandler, m2 map[uint32][]sharding.GenesisNodeInfoHandler) {
-		return validatorsMap, waitingMap
-	}}
+	numNodes := nbShards*nodesPerShard + nbMetaNodes
+
+	nodesSetup := &mock.NodesSetupStub{
+		InitialNodesInfoCalled: func() (m map[uint32][]sharding.GenesisNodeInfoHandler, m2 map[uint32][]sharding.GenesisNodeInfoHandler) {
+			return validatorsMap, waitingMap
+		},
+		MinNumberOfNodesCalled: func() uint32 {
+			return uint32(numNodes)
+		},
+	}
 
 	nodesMap := make(map[uint32][]*TestProcessorNode)
 

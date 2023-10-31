@@ -1,14 +1,14 @@
 <div style="text-align:center">
   <img
   src="https://raw.githubusercontent.com/Dharitri-org/sme-dharitri/master/dharitri_logo_01.svg"
-  alt="Dharitri Network">
+  alt="DHaritri">
 </div>
 <br>
 
 [![](https://img.shields.io/badge/made%20by-Dharitri%20Network-blue.svg)](http://dharitri.org/)
 [![](https://img.shields.io/badge/project-Dharitri%20Network%20Testnet-blue.svg)](https://testnet.dharitri.org/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Dharitri-org/sme-dharitri)](https://goreportcard.com/report/github.com/Dharitri-org/sme-dharitri)
-[![LoC](https://tokei.rs/b1/github.com/Dharitri-org/sme-dharitri?category=code)](https://github.com/Dharitri-org/sme-dharitri)
+[![LoC](https://tokei.rs/b1/Dharitri-org/sme-dharitri?category=code)](https://github.com/Dharitri-org/sme-dharitri)
 [![API Reference](https://godoc.org/github.com/Dharitri-org/sme-dharitri?status.svg)](https://godoc.org/github.com/Dharitri-org/sme-dharitri)
 [![riot.im](https://img.shields.io/badge/riot.im-JOIN%20CHAT-green.svg)](https://riot.im/app/#/room/#dharitri:matrix.org)
 
@@ -18,7 +18,8 @@ The go implementation for the Dharitri Network testnet
 
 ## Installation and running
 
-In order to join the network as an observer or as a validator, the required steps are explained below:
+In order to join the network as an observer or as a validator, the required steps to **build from source and setup explicitly** are explained below. 
+Alternatively, in order to use the Docker Image, jump to [Using the Docker Image](#using-the-docker-image).
 
 ### Step 1: install & configure go:
 The installation of go should proceed as shown in official golang installation guide https://golang.org/doc/install . In order to run the node, minimum golang version should be 1.12.4.
@@ -106,6 +107,22 @@ sudo cp protoc-gen-gogoslick /usr/bin/
 ```
 
 Done
+
+## Using the Docker Image
+
+The following command runs a Node using the **latest** [Docker image](https://hub.docker.com/r/Dharitri-org/sme-dharitri-node) and maps a container folder to a local one that holds the necessary configuration:
+
+```
+docker run -d -v /absolute/path/to/config/:/data/ Dharitri-org/sme-dharitri-node:latest \
+ --nodes-setup-file="/data/nodesSetup.json" \
+ --p2p-config="/data/config/p2p.toml" \
+ --validator-key-pem-file="/data/keys/validatorKey.pem"
+ ```
+
+ In the snippet above, make sure you adjust the path to a valid configuration folder and also provide the appropriate command line arguments to the Node. For more details go to [Node CLI](https://docs.dharitri.org/validators/node-cli).
+
+ In order to run a container using the latest **development** version instead, use the image **`/Dharitri-org/sme-dharitri-node:devlatest`**. Furthermore, in order to use a specific release or tagged branch, use the image **`Dharitri-org/sme-dharitri-node:<tag>`**.
+
 
 ## Progress
 

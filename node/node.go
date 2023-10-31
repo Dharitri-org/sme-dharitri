@@ -19,6 +19,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/consensus/spos/sposFactory"
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
+	"github.com/Dharitri-org/sme-dharitri/core/fullHistory"
 	"github.com/Dharitri-org/sme-dharitri/core/indexer"
 	"github.com/Dharitri-org/sme-dharitri/core/partitioning"
 	"github.com/Dharitri-org/sme-dharitri/crypto"
@@ -106,6 +107,7 @@ type Node struct {
 	singleSigner      crypto.SingleSigner
 	txSingleSigner    crypto.SingleSigner
 	multiSigner       crypto.MultiSigner
+	peerSigHandler    crypto.PeerSignatureHandler
 	forkDetector      process.ForkDetector
 
 	blkc               data.ChainHandler
@@ -154,7 +156,8 @@ type Node struct {
 	heartbeatHandler   *componentHandler.HeartbeatHandler
 	peerHonestyHandler consensus.PeerHonestyHandler
 
-	watchdog core.WatchdogTimer
+	watchdog          core.WatchdogTimer
+	historyRepository fullHistory.HistoryRepository
 }
 
 // ApplyOptions can set up different configurable options of a Node instance
@@ -267,7 +270,7 @@ func (n *Node) StartConsensus() error {
 		n.messenger,
 		n.shardCoordinator,
 		n.privKey,
-		n.singleSigner,
+		n.peerSigHandler,
 		n.dataPool.Headers(),
 		n.interceptorsContainer,
 	)
@@ -289,12 +292,11 @@ func (n *Node) StartConsensus() error {
 		BroadcastMessenger:       broadcastMessenger,
 		ConsensusState:           consensusState,
 		ForkDetector:             n.forkDetector,
-		KeyGenerator:             n.keyGen,
 		Marshalizer:              netInputMarshalizer,
 		Hasher:                   n.hasher,
 		Rounder:                  n.rounder,
 		ShardCoordinator:         n.shardCoordinator,
-		SingleSigner:             n.singleSigner,
+		PeerSignatureHandler:     n.peerSigHandler,
 		SyncTimer:                n.syncTimer,
 		HeaderSigVerifier:        n.headerSigVerifier,
 		HeaderIntegrityVerifier:  n.headerIntegrityVerifier,
@@ -896,7 +898,7 @@ func (n *Node) CreateTransaction(
 	sender string,
 	gasPrice uint64,
 	gasLimit uint64,
-	dataField string,
+	dataField []byte,
 	signatureHex string,
 	chainID string,
 	version uint32,
@@ -941,7 +943,7 @@ func (n *Node) CreateTransaction(
 		SndAddr:   senderAddress,
 		GasPrice:  gasPrice,
 		GasLimit:  gasLimit,
-		Data:      []byte(dataField),
+		Data:      dataField,
 		Signature: signatureBytes,
 		ChainID:   []byte(chainID),
 		Version:   version,
@@ -999,8 +1001,7 @@ func (n *Node) StartHeartbeat(hbConfig config.HeartbeatConfig, versionNumber str
 		AppStatusHandler:         n.appStatusHandler,
 		Storer:                   n.store.GetStorer(dataRetriever.HeartbeatUnit),
 		ValidatorStatistics:      n.validatorStatistics,
-		KeyGenerator:             n.keyGen,
-		SingleSigner:             n.singleSigner,
+		PeerSignatureHandler:     n.peerSigHandler,
 		PrivKey:                  n.privKey,
 		HardforkTrigger:          n.hardforkTrigger,
 		AntifloodHandler:         n.inputAntifloodHandler,

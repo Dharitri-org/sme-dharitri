@@ -10,7 +10,6 @@ import (
 
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
-	"github.com/Dharitri-org/sme-dharitri/core/serviceContainer"
 	"github.com/Dharitri-org/sme-dharitri/data"
 	"github.com/Dharitri-org/sme-dharitri/data/block"
 	"github.com/Dharitri-org/sme-dharitri/data/state"
@@ -28,7 +27,6 @@ var _ process.BlockProcessor = (*metaProcessor)(nil)
 // metaProcessor implements metaProcessor interface and actually it tries to execute block
 type metaProcessor struct {
 	*baseProcessor
-	core                         serviceContainer.Core
 	scDataGetter                 external.SCQueryService
 	scToProtocol                 process.SmartContractToProtocolHandler
 	epochStartDataCreator        process.EpochStartDataCreator
@@ -104,12 +102,14 @@ func NewMetaProcessor(arguments ArgMetaProcessor) (*metaProcessor, error) {
 		dataPool:               arguments.DataPool,
 		blockChain:             arguments.BlockChain,
 		stateCheckpointModulus: arguments.StateCheckpointModulus,
+		indexer:                arguments.Indexer,
+		tpsBenchmark:           arguments.TpsBenchmark,
 		genesisNonce:           genesisHdr.GetNonce(),
 		version:                core.TrimSoftwareVersion(arguments.Version),
+		historyRepo:            arguments.HistoryRepository,
 	}
 
 	mp := metaProcessor{
-		core:                         arguments.Core,
 		baseProcessor:                base,
 		headersCounter:               NewHeaderCounter(),
 		scDataGetter:                 arguments.SCDataGetter,
@@ -275,7 +275,7 @@ func (mp *metaProcessor) ProcessBlock(
 	}
 
 	defer func() {
-		go mp.checkAndRequestIfShardHeadersMissing(header.Round)
+		go mp.checkAndRequestIfShardHeadersMissing()
 	}()
 
 	highestNonceHdrs, err := mp.checkShardHeadersValidity(header)
@@ -340,11 +340,6 @@ func (mp *metaProcessor) processEpochStartMetaBlock(
 		return err
 	}
 
-	err = mp.epochEconomics.VerifyRewardsPerBlock(header)
-	if err != nil {
-		return err
-	}
-
 	currentRootHash, err := mp.validatorStatisticsProcessor.RootHash()
 	if err != nil {
 		return err
@@ -371,6 +366,11 @@ func (mp *metaProcessor) processEpochStartMetaBlock(
 	}
 
 	err = mp.validatorStatisticsProcessor.ResetValidatorStatisticsAtNewEpoch(allValidatorsInfo)
+	if err != nil {
+		return err
+	}
+
+	err = mp.epochEconomics.VerifyRewardsPerBlock(header, mp.epochRewardsCreator.GetProtocolSustainabilityRewards())
 	if err != nil {
 		return err
 	}
@@ -490,11 +490,11 @@ func (mp *metaProcessor) getAllMiniBlockDstMeFromShards(metaHdr *block.MetaBlock
 	return miniBlockShardsHashes, nil
 }
 
-func (mp *metaProcessor) checkAndRequestIfShardHeadersMissing(round uint64) {
+func (mp *metaProcessor) checkAndRequestIfShardHeadersMissing() {
 	orderedHdrsPerShard := mp.blockTracker.GetTrackedHeadersForAllShards()
 
 	for i := uint32(0); i < mp.shardCoordinator.NumberOfShards(); i++ {
-		err := mp.requestHeadersIfMissing(orderedHdrsPerShard[i], i, round)
+		err := mp.requestHeadersIfMissing(orderedHdrsPerShard[i], i)
 		if err != nil {
 			log.Debug("checkAndRequestIfShardHeadersMissing", "error", err.Error())
 			continue
@@ -509,14 +509,11 @@ func (mp *metaProcessor) indexBlock(
 	notarizedHeadersHashes []string,
 	rewardsTxs map[string]data.TransactionHandler,
 ) {
-	if mp.core == nil || mp.core.Indexer() == nil {
+	if mp.indexer.IsNilIndexer() {
 		return
 	}
-	// Update tps benchmarks in the DB
-	tpsBenchmark := mp.core.TPSBenchmark()
-	if tpsBenchmark != nil {
-		go mp.core.Indexer().UpdateTPS(tpsBenchmark)
-	}
+
+	go mp.indexer.UpdateTPS(mp.tpsBenchmark)
 
 	txPool := mp.txCoordinator.GetAllCurrentUsedTxs(block.TxBlock)
 	scPool := mp.txCoordinator.GetAllCurrentUsedTxs(block.SmartContractResultBlock)
@@ -558,15 +555,15 @@ func (mp *metaProcessor) indexBlock(
 		return
 	}
 
-	go mp.core.Indexer().SaveBlock(body, metaBlock, txPool, signersIndexes, notarizedHeadersHashes)
+	go mp.indexer.SaveBlock(body, metaBlock, txPool, signersIndexes, notarizedHeadersHashes)
 
-	indexRoundInfo(mp.core.Indexer(), mp.nodesCoordinator, core.MetachainShardId, metaBlock, lastMetaBlock, signersIndexes)
+	indexRoundInfo(mp.indexer, mp.nodesCoordinator, core.MetachainShardId, metaBlock, lastMetaBlock, signersIndexes)
 
 	if metaBlock.GetNonce() != 1 && !metaBlock.IsStartOfEpochBlock() {
 		return
 	}
 
-	indexValidatorsRating(mp.core.Indexer(), mp.validatorStatisticsProcessor, metaBlock)
+	indexValidatorsRating(mp.indexer, mp.validatorStatisticsProcessor, metaBlock)
 }
 
 // RestoreBlockIntoPools restores the block into associated pools
@@ -735,6 +732,7 @@ func (mp *metaProcessor) createEpochStartBody(metaBlock *block.MetaBlock) (data.
 	if err != nil {
 		return nil, err
 	}
+	metaBlock.EpochStart.Economics.RewardsForProtocolSustainability.Set(mp.epochRewardsCreator.GetProtocolSustainabilityRewards())
 
 	validatorMiniBlocks, err := mp.validatorInfoCreator.CreateValidatorInfoMiniBlocks(allValidatorsInfo)
 	if err != nil {
@@ -855,22 +853,16 @@ func (mp *metaProcessor) createAndProcessCrossMiniBlocksDstMe(
 		"num shard headers", len(orderedHdrs),
 	)
 
-	mp.hdrsForCurrBlock.mutHdrsForBlock.Lock()
-	lastShardHdr := make(map[uint32]data.HeaderHandler, mp.shardCoordinator.NumberOfShards())
-	for shardID := uint32(0); shardID < mp.shardCoordinator.NumberOfShards(); shardID++ {
-		lastCrossNotarizedHeaderForShard, hash, errBlockTracker := mp.blockTracker.GetLastCrossNotarizedHeader(shardID)
-		if errBlockTracker != nil {
-			mp.hdrsForCurrBlock.mutHdrsForBlock.Unlock()
-			return nil, 0, 0, errBlockTracker
-		}
-
-		lastShardHdr[shardID] = lastCrossNotarizedHeaderForShard
-		usedInBlock := mp.isGenesisShardBlockAndFirstMeta(lastCrossNotarizedHeaderForShard.GetNonce())
-		mp.hdrsForCurrBlock.hdrHashAndInfo[string(hash)] = &hdrInfo{hdr: lastCrossNotarizedHeaderForShard, usedInBlock: usedInBlock}
+	lastShardHdr, err := mp.getLastCrossNotarizedShardHdrs()
+	if err != nil {
+		return nil, 0, 0, err
 	}
-	mp.hdrsForCurrBlock.mutHdrsForBlock.Unlock()
 
-	maxShardHeadersFromSameShard := process.MaxShardHeadersAllowedInOneMetaBlock / mp.shardCoordinator.NumberOfShards()
+	maxShardHeadersFromSameShard := core.MaxUint32(
+		process.MinShardHeadersFromSameShardInOneMetaBlock,
+		process.MaxShardHeadersAllowedInOneMetaBlock/mp.shardCoordinator.NumberOfShards(),
+	)
+	maxShardHeadersAllowedInOneMetaBlock := maxShardHeadersFromSameShard * mp.shardCoordinator.NumberOfShards()
 	hdrsAddedForShard := make(map[uint32]uint32)
 
 	mp.hdrsForCurrBlock.mutHdrsForBlock.Lock()
@@ -882,7 +874,7 @@ func (mp *metaProcessor) createAndProcessCrossMiniBlocksDstMe(
 			break
 		}
 
-		if hdrsAdded >= process.MaxShardHeadersAllowedInOneMetaBlock {
+		if hdrsAdded >= maxShardHeadersAllowedInOneMetaBlock {
 			log.Debug("maximum shard headers allowed to be included in one meta block has been reached",
 				"shard headers added", hdrsAdded,
 			)
@@ -1092,11 +1084,9 @@ func (mp *metaProcessor) CommitBlock(
 		mp.blockTracker.CleanupInvalidCrossHeaders(header.Epoch, header.Round)
 	}
 
-	if mp.core != nil && mp.core.TPSBenchmark() != nil {
-		mp.core.TPSBenchmark().Update(header)
-	}
-
+	mp.tpsBenchmark.Update(header)
 	mp.indexBlock(header, body, lastMetaBlock, notarizedHeadersHashes, rewardsTxs)
+	mp.saveHistoryData(headerHash, headerHandler, bodyHandler)
 
 	saveMetachainCommitBlockMetrics(mp.appStatusHandler, header, headerHash, mp.nodesCoordinator)
 
@@ -1112,6 +1102,7 @@ func (mp *metaProcessor) CommitBlock(
 		headerHash,
 		numShardHeadersFromPool,
 		mp.blockTracker,
+		uint64(mp.rounder.TimeDuration().Seconds()),
 	)
 
 	headerInfo := bootstrapStorage.BootstrapHeaderInfo{
@@ -1221,7 +1212,12 @@ func (mp *metaProcessor) updateState(lastMetaBlock data.HeaderHandler) {
 
 	mp.validatorStatisticsProcessor.SetLastFinalizedRootHash(lastMetaBlock.GetValidatorStatsRootHash())
 
-	prevHeader, errNotCritical := process.GetMetaHeaderFromStorage(lastMetaBlock.GetPrevHash(), mp.marshalizer, mp.store)
+	prevHeader, errNotCritical := process.GetMetaHeader(
+		lastMetaBlock.GetPrevHash(),
+		mp.dataPool.Headers(),
+		mp.marshalizer,
+		mp.store,
+	)
 	if errNotCritical != nil {
 		log.Debug("could not get meta header from storage")
 		return
@@ -1286,7 +1282,12 @@ func (mp *metaProcessor) getLastSelfNotarizedHeaderByShard(
 		}
 
 		for _, metaHash := range shardHeader.MetaBlockHashes {
-			metaHeader, errGet := process.GetMetaHeader(metaHash, mp.dataPool.Headers(), mp.marshalizer, mp.store)
+			metaHeader, errGet := process.GetMetaHeader(
+				metaHash,
+				mp.dataPool.Headers(),
+				mp.marshalizer,
+				mp.store,
+			)
 			if errGet != nil {
 				log.Trace("getLastSelfNotarizedHeaderByShard.GetMetaHeader", "error", errGet.Error())
 				continue
@@ -1319,10 +1320,9 @@ func (mp *metaProcessor) ApplyProcessedMiniBlocks(_ *processedMb.ProcessedMiniBl
 
 // getRewardsTxs must be called before method commitEpoch start because when commit is done rewards txs are removed from pool and saved in storage
 func (mp *metaProcessor) getRewardsTxs(header *block.MetaBlock, body *block.Body) (rewardsTx map[string]data.TransactionHandler) {
-	if check.IfNil(mp.core) || check.IfNil(mp.core.Indexer()) {
+	if mp.indexer.IsNilIndexer() {
 		return
 	}
-
 	if !header.IsStartOfEpochBlock() {
 		return
 	}
@@ -1461,23 +1461,33 @@ func (mp *metaProcessor) saveLastNotarizedHeader(header *block.MetaBlock) error 
 	return nil
 }
 
-// check if shard headers were signed and constructed correctly and returns headers which has to be
-// checked for finality
-func (mp *metaProcessor) checkShardHeadersValidity(metaHdr *block.MetaBlock) (map[uint32]data.HeaderHandler, error) {
+func (mp *metaProcessor) getLastCrossNotarizedShardHdrs() (map[uint32]data.HeaderHandler, error) {
 	mp.hdrsForCurrBlock.mutHdrsForBlock.Lock()
+	defer mp.hdrsForCurrBlock.mutHdrsForBlock.Unlock()
+
 	lastCrossNotarizedHeader := make(map[uint32]data.HeaderHandler, mp.shardCoordinator.NumberOfShards())
 	for shardID := uint32(0); shardID < mp.shardCoordinator.NumberOfShards(); shardID++ {
 		lastCrossNotarizedHeaderForShard, hash, err := mp.blockTracker.GetLastCrossNotarizedHeader(shardID)
 		if err != nil {
-			mp.hdrsForCurrBlock.mutHdrsForBlock.Unlock()
 			return nil, err
 		}
 
+		log.Debug("lastCrossNotarizedHeader for shard", "shardID", shardID, "hash", hash)
 		lastCrossNotarizedHeader[shardID] = lastCrossNotarizedHeaderForShard
 		usedInBlock := mp.isGenesisShardBlockAndFirstMeta(lastCrossNotarizedHeaderForShard.GetNonce())
 		mp.hdrsForCurrBlock.hdrHashAndInfo[string(hash)] = &hdrInfo{hdr: lastCrossNotarizedHeaderForShard, usedInBlock: usedInBlock}
 	}
-	mp.hdrsForCurrBlock.mutHdrsForBlock.Unlock()
+
+	return lastCrossNotarizedHeader, nil
+}
+
+// check if shard headers were signed and constructed correctly and returns headers which has to be
+// checked for finality
+func (mp *metaProcessor) checkShardHeadersValidity(metaHdr *block.MetaBlock) (map[uint32]data.HeaderHandler, error) {
+	lastCrossNotarizedHeader, err := mp.getLastCrossNotarizedShardHdrs()
+	if err != nil {
+		return nil, err
+	}
 
 	usedShardHdrs := mp.sortHeadersForCurrentBlockByNonce(true)
 	highestNonceHdrs := make(map[uint32]data.HeaderHandler, len(usedShardHdrs))
@@ -1504,11 +1514,16 @@ func (mp *metaProcessor) checkShardHeadersValidity(metaHdr *block.MetaBlock) (ma
 	defer mp.hdrsForCurrBlock.mutHdrsForBlock.Unlock()
 
 	for _, shardData := range metaHdr.ShardInfo {
-		actualHdr := mp.hdrsForCurrBlock.hdrHashAndInfo[string(shardData.HeaderHash)].hdr
+		hdrInfo, ok := mp.hdrsForCurrBlock.hdrHashAndInfo[string(shardData.HeaderHash)]
+		if !ok {
+			return nil, fmt.Errorf("%w : checkShardHeadersValidity -> hash not found %s ", process.ErrHeaderShardDataMismatch, shardData.HeaderHash)
+		}
+		actualHdr := hdrInfo.hdr
 		shardHdr, ok := actualHdr.(*block.Header)
 		if !ok {
 			return nil, process.ErrWrongTypeAssertion
 		}
+
 		if len(shardData.ShardMiniBlockHeaders) != len(shardHdr.MiniBlockHeaders) {
 			return nil, process.ErrHeaderShardDataMismatch
 		}
@@ -1673,6 +1688,18 @@ func (mp *metaProcessor) computeExistingAndRequestMissingShardHeaders(metaBlock 
 
 	for _, shardData := range metaBlock.ShardInfo {
 		if shardData.Nonce == mp.genesisNonce {
+			lastCrossNotarizedHeaderForShard, hash, err := mp.blockTracker.GetLastCrossNotarizedHeader(shardData.ShardID)
+			if err != nil {
+				log.Warn("computeExistingAndRequestMissingShardHeaders.GetLastCrossNotarizedHeader", "error", err.Error())
+				continue
+			}
+			if bytes.Compare(hash, shardData.HeaderHash) != 0 {
+				log.Warn("genesis hash missmatch",
+					"last notarized nonce", lastCrossNotarizedHeaderForShard.GetNonce(),
+					"last notarized hash", hash,
+					"genesis nonce", mp.genesisNonce,
+					"genesis hash", shardData.HeaderHash)
+			}
 			continue
 		}
 
@@ -1827,7 +1854,7 @@ func (mp *metaProcessor) applyBodyToHeader(metaHdr *block.MetaBlock, bodyHandler
 
 	var err error
 	defer func() {
-		go mp.checkAndRequestIfShardHeadersMissing(metaHdr.GetRound())
+		go mp.checkAndRequestIfShardHeadersMissing()
 	}()
 
 	sw.Start("createShardInfo")

@@ -115,25 +115,25 @@ func (e *dctTransfer) addToDCTBalance(userAcnt state.UserAccountHandler, key []b
 		return process.ErrInsufficientFunds
 	}
 
-	marshalledData, err := e.marshalizer.Marshal(dctData)
+	marshaledData, err := e.marshalizer.Marshal(dctData)
 	if err != nil {
 		return err
 	}
 
 	log.Trace("dct after transfer", "addr", userAcnt.AddressBytes(), "value", dctData.Value, "tokenKey", key)
-	userAcnt.DataTrieTracker().SaveKeyValue(key, marshalledData)
+	userAcnt.DataTrieTracker().SaveKeyValue(key, marshaledData)
 
 	return nil
 }
 
 func (e *dctTransfer) getDCTDataFromKey(userAcnt state.UserAccountHandler, key []byte) (*DCToken, error) {
 	dctData := &DCToken{Value: big.NewInt(0)}
-	marshalledData, err := userAcnt.DataTrieTracker().RetrieveValue(key)
-	if err != nil || len(marshalledData) == 0 {
+	marshaledData, err := userAcnt.DataTrieTracker().RetrieveValue(key)
+	if err != nil || len(marshaledData) == 0 {
 		return dctData, nil
 	}
 
-	err = e.marshalizer.Unmarshal(dctData, marshalledData)
+	err = e.marshalizer.Unmarshal(dctData, marshaledData)
 	if err != nil {
 		return nil, err
 	}

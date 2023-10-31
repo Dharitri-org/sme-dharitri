@@ -304,7 +304,7 @@ func (tr *patriciaMerkleTrie) Recreate(root []byte) (data.Trie, error) {
 	}
 
 	newTr := tr.recreateFromMainDb(root)
-	if newTr != nil {
+	if !check.IfNil(newTr) {
 		return newTr, nil
 	}
 
@@ -673,4 +673,9 @@ func logMapWithTrace(message string, paramName string, hashes data.ModifiedHashe
 			log.Trace(message, paramName, key)
 		}
 	}
+}
+
+// GetSnapshotDbBatchDelay returns the batch write delay in seconds
+func (tr *patriciaMerkleTrie) GetSnapshotDbBatchDelay() int {
+	return tr.trieStorage.GetSnapshotDbBatchDelay()
 }

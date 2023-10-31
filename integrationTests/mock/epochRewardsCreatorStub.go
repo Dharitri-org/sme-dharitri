@@ -1,6 +1,8 @@
 package mock
 
 import (
+	"math/big"
+
 	"github.com/Dharitri-org/sme-dharitri/data"
 	"github.com/Dharitri-org/sme-dharitri/data/block"
 	"github.com/Dharitri-org/sme-dharitri/data/state"
@@ -15,6 +17,15 @@ type EpochRewardsCreatorStub struct {
 	DeleteTxsFromStorageCalled     func(metaBlock *block.MetaBlock, body *block.Body)
 	RemoveBlockDataFromPoolsCalled func(metaBlock *block.MetaBlock, body *block.Body)
 	GetRewardsTxsCalled            func(body *block.Body) map[string]data.TransactionHandler
+	GetProtocolSustainCalled       func() *big.Int
+}
+
+// GetProtocolSustainabilityRewards -
+func (e *EpochRewardsCreatorStub) GetProtocolSustainabilityRewards() *big.Int {
+	if e.GetProtocolSustainCalled != nil {
+		return e.GetProtocolSustainCalled()
+	}
+	return big.NewInt(0)
 }
 
 // CreateRewardsMiniBlocks -

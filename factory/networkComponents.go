@@ -8,6 +8,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/core/check"
 	"github.com/Dharitri-org/sme-dharitri/debug/antiflood"
 	"github.com/Dharitri-org/sme-dharitri/marshal"
+	"github.com/Dharitri-org/sme-dharitri/p2p"
 	"github.com/Dharitri-org/sme-dharitri/p2p/libp2p"
 	"github.com/Dharitri-org/sme-dharitri/process"
 	antifloodFactory "github.com/Dharitri-org/sme-dharitri/process/throttle/antiflood/factory"
@@ -19,6 +20,7 @@ type networkComponentsFactory struct {
 	statusHandler core.AppStatusHandler
 	listenAddress string
 	marshalizer   marshal.Marshalizer
+	syncer        p2p.SyncTimer
 }
 
 // NewNetworkComponentsFactory returns a new instance of a network components factory
@@ -27,6 +29,7 @@ func NewNetworkComponentsFactory(
 	mainConfig config.Config,
 	statusHandler core.AppStatusHandler,
 	marshalizer marshal.Marshalizer,
+	syncer p2p.SyncTimer,
 ) (*networkComponentsFactory, error) {
 	if check.IfNil(statusHandler) {
 		return nil, ErrNilStatusHandler
@@ -41,6 +44,7 @@ func NewNetworkComponentsFactory(
 		mainConfig:    mainConfig,
 		statusHandler: statusHandler,
 		listenAddress: libp2p.ListenAddrWithIp4AndTcp,
+		syncer:        syncer,
 	}, nil
 }
 
@@ -50,6 +54,7 @@ func (ncf *networkComponentsFactory) Create() (*NetworkComponents, error) {
 		Marshalizer:   ncf.marshalizer,
 		ListenAddress: ncf.listenAddress,
 		P2pConfig:     ncf.p2pConfig,
+		SyncTimer:     ncf.syncer,
 	}
 
 	netMessenger, err := libp2p.NewNetworkMessenger(arg)

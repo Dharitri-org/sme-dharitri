@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/Dharitri-org/sme-dharitri/core"
-	"github.com/Dharitri-org/sme-dharitri/core/indexer"
 	"github.com/Dharitri-org/sme-dharitri/data"
 	"github.com/Dharitri-org/sme-dharitri/data/block"
 	"github.com/Dharitri-org/sme-dharitri/data/blockchain"
@@ -104,6 +103,8 @@ func CreateMockArgumentsMultiShard() blproc.ArgShardProcessor {
 	arguments.ShardCoordinator = mock.NewMultiShardsCoordinatorMock(3)
 	arguments.BlockChain = blockchain.NewBlockChain()
 	_ = arguments.BlockChain.SetGenesisHeader(&block.Header{Nonce: 0})
+	arguments.Indexer = &mock.IndexerMock{}
+	arguments.TpsBenchmark = &testscommon.TpsBenchmarkMock{}
 
 	return arguments
 }
@@ -1343,7 +1344,7 @@ func TestShardProcessor_CheckAndRequestIfMetaHeadersMissingShouldErr(t *testing.
 
 	tdp.Headers().AddHeader(metaHash, meta)
 
-	sp.CheckAndRequestIfMetaHeadersMissing(2)
+	sp.CheckAndRequestIfMetaHeadersMissing()
 	time.Sleep(100 * time.Millisecond)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&hdrNoncesRequestCalled))
 	assert.Equal(t, err, process.ErrTimeIsOut)
@@ -1846,15 +1847,11 @@ func TestShardProcessor_CommitBlockCallsIndexerMethods(t *testing.T) {
 	saveBlockCalledMutex := sync.Mutex{}
 
 	arguments := CreateMockArgumentsMultiShard()
-	arguments.Core = &mock.ServiceContainerMock{
-		IndexerCalled: func() indexer.Indexer {
-			return &mock.IndexerMock{
-				SaveBlockCalled: func(body data.BodyHandler, header data.HeaderHandler, txPool map[string]data.TransactionHandler) {
-					saveBlockCalledMutex.Lock()
-					saveBlockCalled = txPool
-					saveBlockCalledMutex.Unlock()
-				},
-			}
+	arguments.Indexer = &mock.IndexerMock{
+		SaveBlockCalled: func(body data.BodyHandler, header data.HeaderHandler, txPool map[string]data.TransactionHandler) {
+			saveBlockCalledMutex.Lock()
+			saveBlockCalled = txPool
+			saveBlockCalledMutex.Unlock()
 		},
 	}
 	arguments.DataPool = tdp

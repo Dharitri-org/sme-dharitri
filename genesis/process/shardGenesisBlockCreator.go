@@ -38,9 +38,9 @@ type deployedScMetrics struct {
 }
 
 // CreateShardGenesisBlock will create a shard genesis block
-func CreateShardGenesisBlock(arg ArgsGenesisBlockCreator, nodesListSplitter genesis.NodesListSplitter) (data.HeaderHandler, error) {
+func CreateShardGenesisBlock(arg ArgsGenesisBlockCreator, nodesListSplitter genesis.NodesListSplitter, selfShardID uint32) (data.HeaderHandler, error) {
 	if mustDoHardForkImportProcess(arg) {
-		return createShardGenesisAfterHardFork(arg)
+		return createShardGenesisAfterHardFork(arg, selfShardID)
 	}
 
 	processors, err := createProcessorsForShard(arg)
@@ -123,7 +123,7 @@ func CreateShardGenesisBlock(arg ArgsGenesisBlockCreator, nodesListSplitter gene
 	return header, nil
 }
 
-func createShardGenesisAfterHardFork(arg ArgsGenesisBlockCreator) (data.HeaderHandler, error) {
+func createShardGenesisAfterHardFork(arg ArgsGenesisBlockCreator, selfShardId uint32) (data.HeaderHandler, error) {
 	tmpArg := arg
 	tmpArg.Accounts = arg.importHandler.GetAccountsDBForShard(arg.ShardCoordinator.SelfId())
 	processors, err := createProcessorsForShard(tmpArg)
@@ -151,13 +151,16 @@ func createShardGenesisAfterHardFork(arg ArgsGenesisBlockCreator) (data.HeaderHa
 		ImportHandler:      arg.importHandler,
 		Marshalizer:        arg.Marshalizer,
 		Hasher:             arg.Hasher,
+		DataPool:           arg.DataPool,
+		Storage:            arg.Store,
+		SelfShardID:        selfShardId,
 	}
 	shardBlockCreator, err := hardForkProcess.NewShardBlockCreatorAfterHardFork(argsShardBlockAfterHardFork)
 	if err != nil {
 		return nil, err
 	}
 
-	hdrHandler, bodyHandler, err := shardBlockCreator.CreateNewBlock(
+	hdrHandler, _, err := shardBlockCreator.CreateNewBlock(
 		arg.ChainID,
 		arg.HardForkConfig.StartRound,
 		arg.HardForkConfig.StartNonce,
@@ -172,8 +175,6 @@ func createShardGenesisAfterHardFork(arg ArgsGenesisBlockCreator) (data.HeaderHa
 	if err != nil {
 		return nil, err
 	}
-
-	saveGenesisBodyToStorage(processors.txCoordinator, bodyHandler)
 
 	return hdrHandler, nil
 }
@@ -308,7 +309,7 @@ func createProcessorsForShard(arg ArgsGenesisBlockCreator) (*genesisProcessors, 
 		Hasher:           arg.Hasher,
 		Marshalizer:      arg.Marshalizer,
 		AccountsDB:       arg.Accounts,
-		TempAccounts:     vmFactoryImpl.BlockChainHookImpl(),
+		BlockChainHook:   vmFactoryImpl.BlockChainHookImpl(),
 		PubkeyConv:       arg.PubkeyConv,
 		Coordinator:      arg.ShardCoordinator,
 		ScrForwarder:     scForwarder,
@@ -318,6 +319,7 @@ func createProcessorsForShard(arg ArgsGenesisBlockCreator) (*genesisProcessors, 
 		GasHandler:       gasHandler,
 		BuiltInFunctions: vmFactoryImpl.BlockChainHookImpl().GetBuiltInFunctions(),
 		TxLogsProcessor:  arg.TxLogsProcessor,
+		BadTxForwarder:   badTxInterim,
 	}
 	scProcessor, err := smartContract.NewSmartContractProcessor(argsNewScProcessor)
 	if err != nil {
@@ -333,22 +335,24 @@ func createProcessorsForShard(arg ArgsGenesisBlockCreator) (*genesisProcessors, 
 		return nil, err
 	}
 
-	transactionProcessor, err := transaction.NewTxProcessor(
-		arg.Accounts,
-		arg.Hasher,
-		arg.PubkeyConv,
-		arg.Marshalizer,
-		arg.SignMarshalizer,
-		arg.ShardCoordinator,
-		scProcessor,
-		genesisFeeHandler,
-		txTypeHandler,
-		genesisFeeHandler,
-		receiptTxInterim,
-		badTxInterim,
-		smartContract.NewArgumentParser(),
-		scForwarder,
-	)
+	argsNewTxProcessor := transaction.ArgsNewTxProcessor{
+		Accounts:          arg.Accounts,
+		Hasher:            arg.Hasher,
+		PubkeyConv:        arg.PubkeyConv,
+		Marshalizer:       arg.Marshalizer,
+		SignMarshalizer:   arg.SignMarshalizer,
+		ShardCoordinator:  arg.ShardCoordinator,
+		ScProcessor:       scProcessor,
+		TxFeeHandler:      genesisFeeHandler,
+		TxTypeHandler:     txTypeHandler,
+		EconomicsFee:      genesisFeeHandler,
+		ReceiptForwarder:  receiptTxInterim,
+		BadTxForwarder:    badTxInterim,
+		ArgsParser:        smartContract.NewArgumentParser(),
+		ScrForwarder:      scForwarder,
+		DisabledRelayedTx: false,
+	}
+	transactionProcessor, err := transaction.NewTxProcessor(argsNewTxProcessor)
 	if err != nil {
 		return nil, errors.New("could not create transaction statisticsProcessor: " + err.Error())
 	}
@@ -509,7 +513,7 @@ func increaseStakersNonces(processors *genesisProcessors, arg ArgsGenesisBlockCr
 		}
 
 		numNodesStaked := big.NewInt(0).Set(ia.GetStakingValue())
-		numNodesStaked.Div(numNodesStaked, arg.Economics.GenesisNodePrice())
+		numNodesStaked.Div(numNodesStaked, arg.GenesisNodePrice)
 
 		stakersCounter++
 		err = txExecutor.AddNonce(ia.AddressBytes(), numNodesStaked.Uint64())
@@ -538,7 +542,7 @@ func executeDelegation(
 		SmartContractParser: arg.SmartContractParser,
 		NodesListSplitter:   nodesListSplitter,
 		QueryService:        processors.queryService,
-		NodePrice:           arg.Economics.GenesisNodePrice(),
+		NodePrice:           arg.GenesisNodePrice,
 	}
 
 	delegationProcessor, err := intermediate.NewStandardDelegationProcessor(argDP)

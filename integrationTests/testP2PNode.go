@@ -8,6 +8,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/config"
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/crypto"
+	"github.com/Dharitri-org/sme-dharitri/crypto/peerSignatureHandler"
 	"github.com/Dharitri-org/sme-dharitri/crypto/signing"
 	"github.com/Dharitri-org/sme-dharitri/crypto/signing/mcl"
 	mclsig "github.com/Dharitri-org/sme-dharitri/crypto/signing/mcl/singlesig"
@@ -22,6 +23,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/sharding"
 	"github.com/Dharitri-org/sme-dharitri/sharding/networksharding"
 	"github.com/Dharitri-org/sme-dharitri/storage/storageUnit"
+	"github.com/Dharitri-org/sme-dharitri/testscommon"
 	"github.com/Dharitri-org/sme-dharitri/update/trigger"
 )
 
@@ -131,9 +133,15 @@ func (tP2pNode *TestP2PNode) initNode() {
 	}
 	argHardforkTrigger.SelfPubKeyBytes, _ = tP2pNode.NodeKeys.Pk.ToByteArray()
 	hardforkTrigger, err := trigger.NewTrigger(argHardforkTrigger)
-	if err != nil {
-		fmt.Printf("Error creating hardfork trigger: %s\n", err.Error())
-	}
+	log.LogIfError(err)
+
+	cacher := testscommon.NewCacherMock()
+	psh, err := peerSignatureHandler.NewPeerSignatureHandler(
+		cacher,
+		tP2pNode.SingleSigner,
+		tP2pNode.KeyGen,
+	)
+	log.LogIfError(err)
 
 	tP2pNode.Node, err = node.NewNode(
 		node.WithMessenger(tP2pNode.Messenger),
@@ -163,10 +171,9 @@ func (tP2pNode *TestP2PNode) initNode() {
 		node.WithValidatorPubkeyConverter(TestValidatorPubkeyConverter),
 		node.WithValidatorsProvider(&mock.ValidatorsProviderStub{}),
 		node.WithPeerHonestyHandler(&mock.PeerHonestyHandlerStub{}),
+		node.WithPeerSignatureHandler(psh),
 	)
-	if err != nil {
-		fmt.Printf("Error creating node: %s\n", err.Error())
-	}
+	log.LogIfError(err)
 
 	hbConfig := config.HeartbeatConfig{
 		MinTimeToWaitBetweenBroadcastsInSec: 4,
@@ -176,9 +183,7 @@ func (tP2pNode *TestP2PNode) initNode() {
 		HideInactiveValidatorIntervalInSec:  600,
 	}
 	err = tP2pNode.Node.StartHeartbeat(hbConfig, "test", config.PreferencesConfig{})
-	if err != nil {
-		fmt.Printf("Error starting heartbeat: %s\n", err.Error())
-	}
+	log.LogIfError(err)
 }
 
 func (tP2pNode *TestP2PNode) getPubkeys() map[uint32][]string {

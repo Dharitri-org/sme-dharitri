@@ -13,8 +13,8 @@ github.com/Dharitri-org/sme-core-vm-go v0.0.1 h1:vPUKFT7PO76TNzqNJz4LB0DxWqUhTHo
 github.com/Dharitri-org/sme-core-vm-go v0.0.1/go.mod h1:sEP738gPEBfn6UeSXEU6BxB174V7yZs/+0f5b17MXr0=
 github.com/Dharitri-org/sme-logger v0.0.2 h1:ow2mQwd35i/3XoJRz55HyujFobQ7RqvFDvjHslIzGO0=
 github.com/Dharitri-org/sme-logger v0.0.2/go.mod h1:cKB3pqGvjImudj01aHwgXGVGcClSj3g3C+CSnWGa0Z8=
-github.com/Dharitri-org/sme-vm-common v0.0.3 h1:zJCJcscNNQeMyQBvHpHxCAyJnyUbXHyut+XrB7pXzbA=
-github.com/Dharitri-org/sme-vm-common v0.0.3/go.mod h1:Dgpp+8uC8vxS99sw++FDvc63Yn65T32YqrWTyituNLk=
+github.com/Dharitri-org/sme-vm-common v0.0.4 h1:dUYUI8LlX6n9Z8phQhEV7OEHRxWgxQL6lQjbQ2oKJnQ=
+github.com/Dharitri-org/sme-vm-common v0.0.4/go.mod h1:Dgpp+8uC8vxS99sw++FDvc63Yn65T32YqrWTyituNLk=
 github.com/Kubuxu/go-os-helper v0.0.1/go.mod h1:N8B+I7vPCT80IcP58r50u4+gEEcsZETFUpAzWW2ep1Y=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/StackExchange/wmi v0.0.0-20170410192909-ea383cf3ba6e/go.mod h1:3eOhrUMpNV+6aFIbp5/iudMxNCF27Vw2OZgy4xEx0Fg=

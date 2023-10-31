@@ -12,7 +12,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/p2p/libp2p"
 	"github.com/Dharitri-org/sme-dharitri/p2p/mock"
 	"github.com/Dharitri-org/sme-dharitri/testscommon"
-	"github.com/libp2p/go-libp2p/p2p/net/mock"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
 
 func createMockNetworkArgs() libp2p.ArgsNetworkMessenger {

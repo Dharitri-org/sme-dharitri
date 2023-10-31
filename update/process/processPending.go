@@ -59,7 +59,7 @@ func NewPendingTransactionProcessor(args ArgsPendingTransactionProcessor) (*pend
 		return nil, update.ErrNilRwdTxProcessor
 	}
 	if check.IfNil(args.PubKeyConv) {
-		return nil, update.ErrNilPubkeyConverter
+		return nil, update.ErrNilPubKeyConverter
 	}
 	if check.IfNil(args.ShardCoordinator) {
 		return nil, update.ErrNilShardCoordinator
@@ -93,7 +93,12 @@ func (p *pendingProcessor) ProcessTransactionsDstMe(mapTxs map[string]data.Trans
 
 		blockType, err := p.processSingleTransaction(info)
 		if err != nil {
-			log.Debug("could not process transaction", "err", err)
+			log.Debug("could not process transaction",
+				"err", err,
+				"snd", info.tx.GetSndAddr(),
+				"rcv", info.tx.GetRcvAddr(),
+				"value", info.tx.GetValue().String(),
+				"data", info.tx.GetData())
 			continue
 		}
 

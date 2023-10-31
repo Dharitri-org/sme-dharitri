@@ -6,7 +6,7 @@ require (
 	github.com/Dharitri-org/concurrent-map v0.0.2
 	github.com/Dharitri-org/sme-core-vm-go v0.0.1
 	github.com/Dharitri-org/sme-logger v0.0.2
-	github.com/Dharitri-org/sme-vm-common v0.0.3
+	github.com/Dharitri-org/sme-vm-common v0.0.4
 	github.com/beevik/ntp v0.2.0
 	github.com/btcsuite/btcd v0.20.1-beta
 	github.com/btcsuite/btcutil v0.0.0-20190425235716-9e5f4b9a998d

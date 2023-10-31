@@ -8,9 +8,41 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/core/check"
 	"github.com/Dharitri-org/sme-dharitri/data"
 	"github.com/Dharitri-org/sme-dharitri/data/block"
+	"github.com/Dharitri-org/sme-dharitri/dataRetriever"
+	"github.com/Dharitri-org/sme-dharitri/storage"
+	"github.com/Dharitri-org/sme-dharitri/storage/memorydb"
+	"github.com/Dharitri-org/sme-dharitri/storage/storageUnit"
+	"github.com/Dharitri-org/sme-dharitri/testscommon"
 	"github.com/Dharitri-org/sme-dharitri/update/mock"
 	"github.com/stretchr/testify/assert"
 )
+
+func generateTestCache() storage.Cacher {
+	cache, _ := storageUnit.NewCache(storageUnit.CacheConfig{Type: storageUnit.LRUCache, Capacity: 1000, Shards: 1, SizeInBytes: 0})
+	return cache
+}
+
+func generateTestUnit() storage.Storer {
+	storer, _ := storageUnit.NewStorageUnit(
+		generateTestCache(),
+		memorydb.New(),
+	)
+
+	return storer
+}
+
+func initStore() dataRetriever.StorageService {
+	store := dataRetriever.NewChainStorer()
+	store.AddStorer(dataRetriever.TransactionUnit, generateTestUnit())
+	store.AddStorer(dataRetriever.MiniBlockUnit, generateTestUnit())
+	store.AddStorer(dataRetriever.RewardTransactionUnit, generateTestUnit())
+	store.AddStorer(dataRetriever.MetaBlockUnit, generateTestUnit())
+	store.AddStorer(dataRetriever.PeerChangesUnit, generateTestUnit())
+	store.AddStorer(dataRetriever.BlockHeaderUnit, generateTestUnit())
+	store.AddStorer(dataRetriever.ShardHdrNonceHashDataUnit, generateTestUnit())
+	store.AddStorer(dataRetriever.MetaHdrNonceHashDataUnit, generateTestUnit())
+	return store
+}
 
 func createMockArgsNewShardBlockCreatorAfterHardFork() ArgsNewShardBlockCreatorAfterHardFork {
 	return ArgsNewShardBlockCreatorAfterHardFork{
@@ -20,6 +52,8 @@ func createMockArgsNewShardBlockCreatorAfterHardFork() ArgsNewShardBlockCreatorA
 		ImportHandler:      &mock.ImportHandlerStub{},
 		Marshalizer:        &mock.MarshalizerMock{},
 		Hasher:             &mock.HasherMock{},
+		Storage:            initStore(),
+		DataPool:           testscommon.CreatePoolsHolder(1, 0),
 	}
 }
 

@@ -1,7 +1,9 @@
 package factory
 
 import (
+	"fmt"
 	"math"
+	"os"
 	"path"
 	"time"
 
@@ -26,8 +28,8 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/storage/storageUnit"
 	"github.com/Dharitri-org/sme-dharitri/storage/timecache"
 	"github.com/Dharitri-org/sme-dharitri/update"
-	"github.com/Dharitri-org/sme-dharitri/update/files"
 	"github.com/Dharitri-org/sme-dharitri/update/genesis"
+	"github.com/Dharitri-org/sme-dharitri/update/storing"
 	"github.com/Dharitri-org/sme-dharitri/update/sync"
 )
 
@@ -48,6 +50,7 @@ type ArgsExporter struct {
 	ExportFolder             string
 	ExportTriesStorageConfig config.StorageConfig
 	ExportStateStorageConfig config.StorageConfig
+	ExportStateKeysConfig    config.StorageConfig
 	MaxTrieLevelInMemory     uint
 	WhiteListHandler         process.WhiteListHandler
 	WhiteListerVerifiedTxs   process.WhiteListHandler
@@ -55,7 +58,8 @@ type ArgsExporter struct {
 	MultiSigner              crypto.MultiSigner
 	NodesCoordinator         sharding.NodesCoordinator
 	SingleSigner             crypto.SingleSigner
-	AddressPubkeyConverter   core.PubkeyConverter
+	AddressPubKeyConverter   core.PubkeyConverter
+	ValidatorPubKeyConverter core.PubkeyConverter
 	BlockKeyGen              crypto.KeyGenerator
 	KeyGen                   crypto.KeyGenerator
 	BlockSigner              crypto.SingleSigner
@@ -65,6 +69,8 @@ type ArgsExporter struct {
 	InputAntifloodHandler    process.P2PAntifloodHandler
 	OutputAntifloodHandler   process.P2PAntifloodHandler
 	ChainID                  []byte
+	Rounder                  process.Rounder
+	GenesisNodesSetupHandler update.GenesisNodesSetupHandler
 }
 
 type exportHandlerFactory struct {
@@ -82,6 +88,7 @@ type exportHandlerFactory struct {
 	exportFolder             string
 	exportTriesStorageConfig config.StorageConfig
 	exportStateStorageConfig config.StorageConfig
+	exportStateKeysConfig    config.StorageConfig
 	maxTrieLevelInMemory     uint
 	whiteListHandler         process.WhiteListHandler
 	whiteListerVerifiedTxs   process.WhiteListHandler
@@ -95,7 +102,8 @@ type exportHandlerFactory struct {
 	blockKeyGen              crypto.KeyGenerator
 	keyGen                   crypto.KeyGenerator
 	blockSigner              crypto.SingleSigner
-	addressPubkeyConverter   core.PubkeyConverter
+	addressPubKeyConverter   core.PubkeyConverter
+	validatorPubKeyConverter core.PubkeyConverter
 	headerSigVerifier        process.InterceptedHeaderSigVerifier
 	headerIntegrityVerifier  process.InterceptedHeaderIntegrityVerifier
 	validityAttester         process.ValidityAttester
@@ -103,6 +111,8 @@ type exportHandlerFactory struct {
 	inputAntifloodHandler    process.P2PAntifloodHandler
 	outputAntifloodHandler   process.P2PAntifloodHandler
 	chainID                  []byte
+	rounder                  process.Rounder
+	genesisNodesSetupHandler update.GenesisNodesSetupHandler
 }
 
 // NewExportHandlerFactory creates an exporter factory
@@ -158,8 +168,11 @@ func NewExportHandlerFactory(args ArgsExporter) (*exportHandlerFactory, error) {
 	if check.IfNil(args.SingleSigner) {
 		return nil, update.ErrNilSingleSigner
 	}
-	if check.IfNil(args.AddressPubkeyConverter) {
-		return nil, update.ErrNilPubkeyConverter
+	if check.IfNil(args.AddressPubKeyConverter) {
+		return nil, fmt.Errorf("%w for addresses", update.ErrNilPubKeyConverter)
+	}
+	if check.IfNil(args.ValidatorPubKeyConverter) {
+		return nil, fmt.Errorf("%w for validators", update.ErrNilPubKeyConverter)
 	}
 	if check.IfNil(args.BlockKeyGen) {
 		return nil, update.ErrNilBlockKeyGen
@@ -188,6 +201,12 @@ func NewExportHandlerFactory(args ArgsExporter) (*exportHandlerFactory, error) {
 	if check.IfNil(args.OutputAntifloodHandler) {
 		return nil, update.ErrNilAntiFloodHandler
 	}
+	if check.IfNil(args.Rounder) {
+		return nil, update.ErrNilRounder
+	}
+	if check.IfNil(args.GenesisNodesSetupHandler) {
+		return nil, update.ErrNilGenesisNodesSetupHandler
+	}
 
 	e := &exportHandlerFactory{
 		txSignMarshalizer:        args.TxSignMarshalizer,
@@ -204,6 +223,7 @@ func NewExportHandlerFactory(args ArgsExporter) (*exportHandlerFactory, error) {
 		exportFolder:             args.ExportFolder,
 		exportTriesStorageConfig: args.ExportTriesStorageConfig,
 		exportStateStorageConfig: args.ExportStateStorageConfig,
+		exportStateKeysConfig:    args.ExportStateKeysConfig,
 		interceptorsContainer:    args.InterceptorsContainer,
 		whiteListHandler:         args.WhiteListHandler,
 		whiteListerVerifiedTxs:   args.WhiteListerVerifiedTxs,
@@ -212,7 +232,8 @@ func NewExportHandlerFactory(args ArgsExporter) (*exportHandlerFactory, error) {
 		multiSigner:              args.MultiSigner,
 		nodesCoordinator:         args.NodesCoordinator,
 		singleSigner:             args.SingleSigner,
-		addressPubkeyConverter:   args.AddressPubkeyConverter,
+		addressPubKeyConverter:   args.AddressPubKeyConverter,
+		validatorPubKeyConverter: args.ValidatorPubKeyConverter,
 		blockKeyGen:              args.BlockKeyGen,
 		keyGen:                   args.KeyGen,
 		blockSigner:              args.BlockSigner,
@@ -223,6 +244,8 @@ func NewExportHandlerFactory(args ArgsExporter) (*exportHandlerFactory, error) {
 		outputAntifloodHandler:   args.OutputAntifloodHandler,
 		maxTrieLevelInMemory:     args.MaxTrieLevelInMemory,
 		chainID:                  args.ChainID,
+		rounder:                  args.Rounder,
+		genesisNodesSetupHandler: args.GenesisNodesSetupHandler,
 	}
 
 	return e, nil
@@ -230,6 +253,11 @@ func NewExportHandlerFactory(args ArgsExporter) (*exportHandlerFactory, error) {
 
 // Create makes a new export handler
 func (e *exportHandlerFactory) Create() (update.ExportHandler, error) {
+	err := e.prepareFolders(e.exportFolder)
+	if err != nil {
+		return nil, err
+	}
+
 	argsPeerMiniBlocksSyncer := shardchain.ArgPeerMiniBlockSyncer{
 		MiniBlocksPool: e.dataPool.MiniBlocks(),
 		Requesthandler: e.requestHandler,
@@ -251,6 +279,7 @@ func (e *exportHandlerFactory) Create() (update.ExportHandler, error) {
 		Validity:             process.MetaBlockValidity,
 		Finality:             process.BlockFinality,
 		PeerMiniBlocksSyncer: peerMiniBlocksSyncer,
+		Rounder:              e.rounder,
 	}
 	epochHandler, err := shardchain.NewEpochStartTrigger(&argsEpochTrigger)
 	if err != nil {
@@ -316,6 +345,7 @@ func (e *exportHandlerFactory) Create() (update.ExportHandler, error) {
 		StorageService:   e.storageService,
 		Cache:            e.dataPool.Headers(),
 		Marshalizer:      e.marshalizer,
+		Hasher:           e.hasher,
 		EpochHandler:     epochHandler,
 		RequestHandler:   e.requestHandler,
 		Uint64Converter:  e.uint64Converter,
@@ -368,26 +398,32 @@ func (e *exportHandlerFactory) Create() (update.ExportHandler, error) {
 		return nil, err
 	}
 
-	exportStore, err := createFinalExportStorage(e.exportStateStorageConfig, e.exportFolder)
+	keysStorer, err := createStorer(e.exportStateKeysConfig, e.exportFolder)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w while creating keys storer", err)
+	}
+	keysVals, err := createStorer(e.exportStateStorageConfig, e.exportFolder)
+	if err != nil {
+		return nil, fmt.Errorf("%w while creating keys-values storer", err)
 	}
 
-	argsWriter := files.ArgsNewMultiFileWriter{
-		ExportFolder: e.exportFolder,
-		ExportStore:  exportStore,
+	arg := storing.ArgHardforkStorer{
+		KeysStore:   keysStorer,
+		KeyValue:    keysVals,
+		Marshalizer: e.marshalizer,
 	}
-	writer, err := files.NewMultiFileWriter(argsWriter)
-	if err != nil {
-		return nil, err
-	}
+	hs, err := storing.NewHardforkStorer(arg)
 
 	argsExporter := genesis.ArgsNewStateExporter{
-		ShardCoordinator: e.shardCoordinator,
-		StateSyncer:      stateSyncer,
-		Marshalizer:      e.marshalizer,
-		Writer:           writer,
-		Hasher:           e.hasher,
+		ShardCoordinator:         e.shardCoordinator,
+		StateSyncer:              stateSyncer,
+		Marshalizer:              e.marshalizer,
+		HardforkStorer:           hs,
+		Hasher:                   e.hasher,
+		ExportFolder:             e.exportFolder,
+		ValidatorPubKeyConverter: e.validatorPubKeyConverter,
+		AddressPubKeyConverter:   e.addressPubKeyConverter,
+		GenesisNodesSetupHandler: e.genesisNodesSetupHandler,
 	}
 	exportHandler, err := genesis.NewStateExporter(argsExporter)
 	if err != nil {
@@ -401,6 +437,15 @@ func (e *exportHandlerFactory) Create() (update.ExportHandler, error) {
 	}
 
 	return exportHandler, nil
+}
+
+func (e *exportHandlerFactory) prepareFolders(folder string) error {
+	err := os.RemoveAll(folder)
+	if err != nil {
+		return err
+	}
+
+	return os.MkdirAll(folder, os.ModePerm)
 }
 
 func (e *exportHandlerFactory) createInterceptors() error {
@@ -419,7 +464,7 @@ func (e *exportHandlerFactory) createInterceptors() error {
 		BlockSingleSigner:       e.blockSigner,
 		MultiSigner:             e.multiSigner,
 		DataPool:                e.dataPool,
-		AddressPubkeyConverter:  e.addressPubkeyConverter,
+		AddressPubkeyConverter:  e.addressPubKeyConverter,
 		MaxTxNonceDeltaAllowed:  math.MaxInt32,
 		TxFeeHandler:            &disabled.FeeHandler{},
 		BlockBlackList:          timecache.NewTimeCache(time.Second),
@@ -449,7 +494,7 @@ func (e *exportHandlerFactory) createInterceptors() error {
 	return nil
 }
 
-func createFinalExportStorage(storageConfig config.StorageConfig, folder string) (storage.Storer, error) {
+func createStorer(storageConfig config.StorageConfig, folder string) (storage.Storer, error) {
 	dbConfig := storageFactory.GetDBFromConfig(storageConfig.DB)
 	dbConfig.FilePath = path.Join(folder, storageConfig.DB.FilePath)
 	accountsTrieStorage, err := storageUnit.NewStorageUnitFromConf(

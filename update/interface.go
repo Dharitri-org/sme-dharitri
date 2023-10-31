@@ -8,6 +8,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/data/block"
 	"github.com/Dharitri-org/sme-dharitri/data/state"
 	"github.com/Dharitri-org/sme-dharitri/process"
+	"github.com/Dharitri-org/sme-dharitri/sharding"
 )
 
 // StateSyncer interface defines the methods needed to sync and get all states
@@ -59,24 +60,6 @@ type HistoryStorer interface {
 	GetFromEpoch(key []byte, epoch uint32) ([]byte, error)
 	HasInEpoch(key []byte, epoch uint32) error
 
-	IsInterfaceNil() bool
-}
-
-// MultiFileWriter writes several files in a buffered manner
-type MultiFileWriter interface {
-	NewFile(name string) error
-	Write(fileName string, key string, value []byte) error
-	Finish()
-	CloseFile(fileName string)
-	IsInterfaceNil() bool
-}
-
-// MultiFileReader reads data from several files in a buffered way
-type MultiFileReader interface {
-	GetFileNames() []string
-	ReadNextItem(fileName string) (string, []byte, error)
-	Finish()
-	CloseFile(fileName string)
 	IsInterfaceNil() bool
 }
 
@@ -171,13 +154,6 @@ type DataWriter interface {
 	Flush() error
 }
 
-// DataReader defines the methods to read data
-type DataReader interface {
-	Text() string
-	Scan() bool
-	Err() error
-}
-
 // WhiteListHandler is the interface needed to add whitelisted data
 type WhiteListHandler interface {
 	Remove(keys [][]byte)
@@ -240,5 +216,34 @@ type ImportStartHandler interface {
 	ShouldStartImport() bool
 	ResetStartImport() error
 	SetStartImport() error
+	IsInterfaceNil() bool
+}
+
+// HardforkStorer manages the export and import of data
+type HardforkStorer interface {
+	Write(identifier string, key []byte, value []byte) error
+	FinishedIdentifier(identifier string) error
+	RangeKeys(handler func(identifier string, keys [][]byte) bool)
+	Get(identifier string, key []byte) ([]byte, error)
+	Close() error
+	IsInterfaceNil() bool
+}
+
+// GenesisNodesSetupHandler returns the genesis nodes info
+type GenesisNodesSetupHandler interface {
+	InitialNodesInfoForShard(shardId uint32) ([]sharding.GenesisNodeInfoHandler, []sharding.GenesisNodeInfoHandler, error)
+	InitialNodesInfo() (map[uint32][]sharding.GenesisNodeInfoHandler, map[uint32][]sharding.GenesisNodeInfoHandler)
+	GetStartTime() int64
+	GetRoundDuration() uint64
+	GetChainId() string
+	GetMinTransactionVersion() uint32
+	GetShardConsensusGroupSize() uint32
+	GetMetaConsensusGroupSize() uint32
+	MinNumberOfShardNodes() uint32
+	MinNumberOfMetaNodes() uint32
+	GetHysteresis() float32
+	GetAdaptivity() bool
+	NumberOfShards() uint32
+	MinNumberOfNodes() uint32
 	IsInterfaceNil() bool
 }

@@ -20,8 +20,8 @@ import (
 
 var logger = log.Logger("rendezvous")
 
-var protocolID = "/dharitri/1.0.0"
-var randevouzString = "Dharitri - randevous"
+var protocolID = "/Dharitri-org/1.0.0"
+var randevouzString = "Dharitri-org - randevous"
 
 var chans []chan string
 

@@ -2,14 +2,17 @@ package mock
 
 // StorerStub -
 type StorerStub struct {
-	PutCalled          func(key, data []byte) error
-	GetCalled          func(key []byte) ([]byte, error)
-	HasCalled          func(key []byte) error
-	RemoveCalled       func(key []byte) error
-	GetFromEpochCalled func(key []byte, epoch uint32) ([]byte, error)
-	HasInEpochCalled   func(key []byte, epoch uint32) error
-	ClearCacheCalled   func()
-	DestroyUnitCalled  func() error
+	PutCalled              func(key, data []byte) error
+	GetCalled              func(key []byte) ([]byte, error)
+	HasCalled              func(key []byte) error
+	RemoveCalled           func(key []byte) error
+	GetFromEpochCalled     func(key []byte, epoch uint32) ([]byte, error)
+	HasInEpochCalled       func(key []byte, epoch uint32) error
+	ClearCacheCalled       func()
+	DestroyUnitCalled      func() error
+	RangeKeysCalled        func(handler func(key []byte, val []byte) bool)
+	CloseCalled            func() error
+	GetBulkFromEpochCalled func(keys [][]byte, epoch uint32) (map[string][]byte, error)
 }
 
 // SearchFirst -
@@ -19,6 +22,10 @@ func (ss *StorerStub) SearchFirst(_ []byte) ([]byte, error) {
 
 // Close -
 func (ss *StorerStub) Close() error {
+	if ss.CloseCalled != nil {
+		return ss.CloseCalled()
+	}
+
 	return nil
 }
 
@@ -51,6 +58,11 @@ func (ss *StorerStub) GetFromEpoch(key []byte, epoch uint32) ([]byte, error) {
 	return nil, nil
 }
 
+// GetBulkFromEpoch -
+func (ss *StorerStub) GetBulkFromEpoch(keys [][]byte, epoch uint32) (map[string][]byte, error) {
+	return ss.GetBulkFromEpochCalled(keys, epoch)
+}
+
 // HasInEpoch -
 func (ss *StorerStub) HasInEpoch(key []byte, epoch uint32) error {
 	if ss.HasInEpochCalled != nil {
@@ -67,6 +79,13 @@ func (ss *StorerStub) ClearCache() {
 // DestroyUnit -
 func (ss *StorerStub) DestroyUnit() error {
 	return ss.DestroyUnitCalled()
+}
+
+// RangeKeys -
+func (ss *StorerStub) RangeKeys(handler func(key []byte, val []byte) bool) {
+	if ss.RangeKeysCalled != nil {
+		ss.RangeKeysCalled(handler)
+	}
 }
 
 // IsInterfaceNil returns true if there is no value under the interface

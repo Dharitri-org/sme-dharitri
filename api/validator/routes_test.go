@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	apiErrors "github.com/Dharitri-org/sme-dharitri/api/errors"
 	"github.com/Dharitri-org/sme-dharitri/api/middleware"
 	"github.com/Dharitri-org/sme-dharitri/api/mock"
 	"github.com/Dharitri-org/sme-dharitri/api/shared"
@@ -24,6 +26,20 @@ import (
 type ValidatorStatisticsResponse struct {
 	Result map[string]*state.ValidatorApiResponse `json:"statistics"`
 	Error  string                                 `json:"error"`
+}
+
+func TestValidatorStatistics_NilContextShouldError(t *testing.T) {
+	t.Parallel()
+	ws := startNodeServer(nil)
+
+	req, _ := http.NewRequest("GET", "/validator/statistics", nil)
+	resp := httptest.NewRecorder()
+	ws.ServeHTTP(resp, req)
+	response := shared.GenericAPIResponse{}
+	loadResponse(resp.Body, &response)
+
+	assert.Equal(t, shared.ReturnCodeInternalError, response.Code)
+	assert.True(t, strings.Contains(response.Error, apiErrors.ErrNilAppContext.Error()))
 }
 
 func TestValidatorStatistics_ErrorWithWrongFacade(t *testing.T) {
@@ -111,12 +127,12 @@ func logError(err error) {
 	}
 }
 
-func startNodeServer(handler validator.ValidatorsStatisticsApiHandler) *gin.Engine {
+func startNodeServer(handler validator.FacadeHandler) *gin.Engine {
 	ws := gin.New()
 	ws.Use(cors.Default())
 	ginValidatorRoute := ws.Group("/validator")
 	if handler != nil {
-		ginValidatorRoute.Use(middleware.WithTestingDharitriFacade(handler))
+		ginValidatorRoute.Use(middleware.WithFacade(handler))
 	}
 	validatorRoute, _ := wrapper.NewRouterWrapper("validator", ginValidatorRoute, getRoutesConfig())
 	validator.Routes(validatorRoute)
@@ -127,7 +143,7 @@ func startNodeServerWrongFacade() *gin.Engine {
 	ws := gin.New()
 	ws.Use(cors.Default())
 	ws.Use(func(c *gin.Context) {
-		c.Set("dharitriFacade", mock.WrongFacade{})
+		c.Set("facade", mock.WrongFacade{})
 	})
 	ginValidatorRoute := ws.Group("/validator")
 	validatorRoute, _ := wrapper.NewRouterWrapper("validator", ginValidatorRoute, getRoutesConfig())

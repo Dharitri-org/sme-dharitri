@@ -1,6 +1,8 @@
 package process
 
 import (
+	"math/big"
+
 	"github.com/Dharitri-org/sme-dharitri/config"
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/crypto"
@@ -46,6 +48,8 @@ type ArgsGenesisBlockCreator struct {
 	BlockSignKeyGen          crypto.KeyGenerator
 	ImportStartHandler       update.ImportStartHandler
 	WorkingDir               string
-	// created component needed only for hardfork
+	GenesisNodePrice         *big.Int
+	GenesisString            string
+	// created components
 	importHandler update.ImportHandler
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/api/middleware"
 	"github.com/Dharitri-org/sme-dharitri/api/mock"
 	"github.com/Dharitri-org/sme-dharitri/api/network"
+	"github.com/Dharitri-org/sme-dharitri/api/shared"
 	"github.com/Dharitri-org/sme-dharitri/api/wrapper"
 	"github.com/Dharitri-org/sme-dharitri/config"
 	"github.com/Dharitri-org/sme-dharitri/core"
@@ -23,6 +24,34 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestNetworkConfigMetrics_NilContextShouldError(t *testing.T) {
+	t.Parallel()
+	ws := startNodeServer(nil)
+
+	req, _ := http.NewRequest("GET", "/network/config", nil)
+	resp := httptest.NewRecorder()
+	ws.ServeHTTP(resp, req)
+	response := shared.GenericAPIResponse{}
+	loadResponse(resp.Body, &response)
+
+	assert.Equal(t, shared.ReturnCodeInternalError, response.Code)
+	assert.True(t, strings.Contains(response.Error, errors.ErrNilAppContext.Error()))
+}
+
+func TestNetworkStatusMetrics_NilContextShouldError(t *testing.T) {
+	t.Parallel()
+	ws := startNodeServer(nil)
+
+	req, _ := http.NewRequest("GET", "/network/status", nil)
+	resp := httptest.NewRecorder()
+	ws.ServeHTTP(resp, req)
+	response := shared.GenericAPIResponse{}
+	loadResponse(resp.Body, &response)
+
+	assert.Equal(t, shared.ReturnCodeInternalError, response.Code)
+	assert.True(t, strings.Contains(response.Error, errors.ErrNilAppContext.Error()))
+}
 
 func TestNetworkConfigMetrics_ShouldWork(t *testing.T) {
 	t.Parallel()
@@ -123,7 +152,7 @@ func startNodeServer(handler network.FacadeHandler) *gin.Engine {
 	ws.Use(cors.Default())
 	networkRoutes := ws.Group("/network")
 	if handler != nil {
-		networkRoutes.Use(middleware.WithTestingDharitriFacade(handler))
+		networkRoutes.Use(middleware.WithFacade(handler))
 	}
 	networkRouteWrapper, _ := wrapper.NewRouterWrapper("network", networkRoutes, getRoutesConfig())
 	network.Routes(networkRouteWrapper)
@@ -134,7 +163,7 @@ func startNodeServerWrongFacade() *gin.Engine {
 	ws := gin.New()
 	ws.Use(cors.Default())
 	ws.Use(func(c *gin.Context) {
-		c.Set("dharitriFacade", mock.WrongFacade{})
+		c.Set("facade", mock.WrongFacade{})
 	})
 	networkRoute := ws.Group("/network")
 	networkRouteWrapper, _ := wrapper.NewRouterWrapper("network", networkRoute, getRoutesConfig())

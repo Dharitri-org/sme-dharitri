@@ -2,8 +2,10 @@ package pruning
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
+	"runtime/debug"
 	"sync"
 
 	"github.com/Dharitri-org/sme-dharitri/core"
@@ -361,6 +363,65 @@ func (ps *PruningStorer) GetFromEpoch(key []byte, epoch uint32) ([]byte, error) 
 	return nil, fmt.Errorf("key %s not found in %s",
 		hex.EncodeToString(key), ps.identifier)
 
+}
+
+// GetBulkFromEpoch will return a slice of keys only in the persister for the given epoch
+func (ps *PruningStorer) GetBulkFromEpoch(keys [][]byte, epoch uint32) (map[string][]byte, error) {
+	ps.lock.RLock()
+	pd, exists := ps.persistersMapByEpoch[epoch]
+	ps.lock.RUnlock()
+	if !exists {
+		log.Warn("get from removed persister",
+			"id", ps.identifier,
+			"epoch", epoch)
+		return nil, errors.New("persister does not exits")
+	}
+
+	var persisterToRead storage.Persister
+	var err error
+	if pd.getIsClosed() {
+		// TODO add a mutex when a persisterToRead is created
+		persisterToRead, err = ps.persisterFactory.Create(pd.path)
+		if err != nil {
+			log.Debug("open old persister", "error", err.Error())
+			return nil, err
+		}
+		defer func() {
+			err = persisterToRead.Close()
+			if err != nil {
+				log.Debug("persister.Close()", "error", err.Error())
+			}
+		}()
+		err = persisterToRead.Init()
+		if err != nil {
+			log.Debug("init old persister", "error", err.Error())
+			return nil, err
+		}
+	} else {
+		persisterToRead = pd.persister
+	}
+
+	returnMap := make(map[string][]byte, 0)
+	for _, key := range keys {
+		v, ok := ps.cacher.Get(key)
+		if ok {
+			returnMap[string(key)] = v.([]byte)
+			continue
+		}
+
+		res, err := persisterToRead.Get(key)
+		if err != nil {
+			log.Warn("cannot get from persister",
+				"hash", hex.EncodeToString(key),
+				"error", err.Error(),
+			)
+			continue
+		}
+
+		returnMap[string(key)] = res
+	}
+
+	return returnMap, nil
 }
 
 // SearchFirst will search a given key in all the active persisters, from the newest to the oldest
@@ -797,6 +858,13 @@ func (ps *PruningStorer) closeAndDestroyPersisters(epoch uint32) error {
 	}
 
 	return nil
+}
+
+// RangeKeys does nothing as it is unable to iterate over multiple persisters
+// RangeKeys -
+func (ps *PruningStorer) RangeKeys(_ func(key []byte, val []byte) bool) {
+	log.Error("improper use of PruningStorer.RangeKeys()")
+	debug.PrintStack()
 }
 
 // IsInterfaceNil returns true if there is no value under the interface

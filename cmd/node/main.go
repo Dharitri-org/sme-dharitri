@@ -25,9 +25,10 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/core/accumulator"
 	"github.com/Dharitri-org/sme-dharitri/core/alarm"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
+	"github.com/Dharitri-org/sme-dharitri/core/closing"
+	"github.com/Dharitri-org/sme-dharitri/core/fullHistory"
+	historyFactory "github.com/Dharitri-org/sme-dharitri/core/fullHistory/factory"
 	"github.com/Dharitri-org/sme-dharitri/core/indexer"
-	"github.com/Dharitri-org/sme-dharitri/core/random"
-	"github.com/Dharitri-org/sme-dharitri/core/serviceContainer"
 	"github.com/Dharitri-org/sme-dharitri/core/statistics"
 	"github.com/Dharitri-org/sme-dharitri/core/watchdog"
 	"github.com/Dharitri-org/sme-dharitri/crypto"
@@ -374,16 +375,6 @@ VERSION:
 	rm *statistics.ResourceMonitor
 )
 
-// dbIndexer will hold the database indexer. Defined globally so it can be initialised only in
-//
-//	certain conditions. If those conditions will not be met, it will stay as nil
-var dbIndexer indexer.Indexer
-
-// coreServiceContainer is defined globally so it can be injected with appropriate
-//
-//	params depending on the type of node we are starting
-var coreServiceContainer serviceContainer.Core
-
 // appVersion should be populated at build time using ldflags
 // Usage examples:
 // linux/mac:
@@ -494,6 +485,8 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		}
 	}
 
+	err = logger.SetDisplayByteSlice(logger.ToHex)
+	log.LogIfError(err)
 	logger.ToggleCorrelation(ctx.GlobalBool(logWithCorrelation.Name))
 	logger.ToggleLoggerName(ctx.GlobalBool(logWithLoggerName.Name))
 	logLevelFlagValue := ctx.GlobalString(logLevel.Name)
@@ -586,11 +579,11 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 
 	addressPubkeyConverter, err := stateFactory.NewPubkeyConverter(generalConfig.AddressPubkeyConverter)
 	if err != nil {
-		return fmt.Errorf("%w for AddressPubkeyConverter", err)
+		return fmt.Errorf("%w for AddressPubKeyConverter", err)
 	}
 	validatorPubkeyConverter, err := stateFactory.NewPubkeyConverter(generalConfig.ValidatorPubkeyConverter)
 	if err != nil {
-		return fmt.Errorf("%w for AddressPubkeyConverter", err)
+		return fmt.Errorf("%w for ValidatorPubkeyConverter", err)
 	}
 
 	//TODO when refactoring main, maybe initialize economics data before this line
@@ -602,15 +595,32 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 
 	log.Debug("config", "file", ctx.GlobalString(genesisFile.Name))
 
+	exportFolder := filepath.Join(workingDir, generalConfig.Hardfork.ImportFolder)
+	nodesSetupPath := ctx.GlobalString(nodesFile.Name)
+	if generalConfig.Hardfork.AfterHardFork {
+		exportFolderNodesSetupPath := filepath.Join(exportFolder, core.NodesSetupJsonFileName)
+		if !core.DoesFileExist(exportFolderNodesSetupPath) {
+			return fmt.Errorf("cannot find %s in the export folder", core.NodesSetupJsonFileName)
+		}
+
+		nodesSetupPath = exportFolderNodesSetupPath
+	}
 	genesisNodesConfig, err := sharding.NewNodesSetup(
-		ctx.GlobalString(nodesFile.Name),
+		nodesSetupPath,
 		addressPubkeyConverter,
 		validatorPubkeyConverter,
 	)
 	if err != nil {
 		return err
 	}
-	log.Debug("config", "file", ctx.GlobalString(nodesFile.Name))
+	log.Debug("config", "file", nodesSetupPath)
+
+	if generalConfig.Hardfork.AfterHardFork {
+		log.Debug("changed genesis time after hardfork",
+			"old genesis time", genesisNodesConfig.StartTime,
+			"new genesis time", generalConfig.Hardfork.GenesisTime)
+		genesisNodesConfig.StartTime = generalConfig.Hardfork.GenesisTime
+	}
 
 	syncer := ntp.NewSyncTime(generalConfig.NTPConfig, nil)
 	syncer.StartSyncingTime()
@@ -715,7 +725,7 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		ShardCoordinator:                     genesisShardCoordinator,
 		KeyGen:                               cryptoParams.KeyGenerator,
 		PrivKey:                              cryptoParams.PrivateKey,
-		ActivateBLSPubKeyMessageVerification: economicsConfig.ValidatorSettings.ActivateBLSPubKeyMessageVerification,
+		ActivateBLSPubKeyMessageVerification: systemSCConfig.StakingSystemSCConfig.ActivateBLSPubKeyMessageVerification,
 	}
 	cryptoComponentsFactory, err := mainFactory.NewCryptoComponentsFactory(cryptoArgs)
 	if err != nil {
@@ -792,6 +802,7 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		*generalConfig,
 		coreComponents.StatusHandler,
 		coreComponents.InternalMarshalizer,
+		syncer,
 	)
 	if err != nil {
 		return err
@@ -838,7 +849,7 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		genesisNodesConfig.MetaChainMinNodes,
 		genesisNodesConfig.Hysteresis,
 		genesisNodesConfig.Adaptivity,
-		generalConfig.EpochStartConfig.ShuffleBetweenShards,
+		true,
 	)
 
 	destShardIdAsObserver, err := processDestinationShardAsObserver(preferencesConfig.Preferences)
@@ -930,7 +941,6 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		LatestStorageDataProvider:  latestStorageDataProvider,
 		ArgumentsParser:            smartContract.NewArgumentParser(),
 		StatusHandler:              coreComponents.StatusHandler,
-		ImportStartHandler:         importStartHandler,
 	}
 	bootstrapper, err := bootstrap.NewEpochStartBootstrap(epochStartBootstrapArgs)
 	if err != nil {
@@ -1037,7 +1047,8 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		log.Info("the epoch from nodesConfig is", "epoch", bootstrapParameters.NodesConfig.CurrentEpoch)
 	}
 	chanStopNodeProcess := make(chan endProcess.ArgEndProcess, 1)
-	nodesCoordinator, err := createNodesCoordinator(
+	nodesCoordinator, nodeShufflerOut, err := createNodesCoordinator(
+		log,
 		genesisNodesConfig,
 		preferencesConfig.Preferences,
 		epochStartNotifier,
@@ -1135,26 +1146,18 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		return err
 	}
 
-	if externalConfig.ElasticSearchConnector.Enabled {
-		log.Trace("creating elastic search components")
-		dbIndexer, err = createElasticIndexer(
-			ctx,
-			externalConfig.ElasticSearchConnector,
-			externalConfig.ElasticSearchConnector.URL,
-			coreComponents.InternalMarshalizer,
-			coreComponents.Hasher,
-			nodesCoordinator,
-			epochStartNotifier,
-			addressPubkeyConverter,
-			validatorPubkeyConverter,
-			shardCoordinator.SelfId(),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	err = setServiceContainer(shardCoordinator, tpsBenchmark)
+	elasticIndexer, err := createElasticIndexer(
+		ctx,
+		log,
+		externalConfig.ElasticSearchConnector,
+		coreComponents.InternalMarshalizer,
+		coreComponents.Hasher,
+		nodesCoordinator,
+		epochStartNotifier,
+		addressPubkeyConverter,
+		validatorPubkeyConverter,
+		shardCoordinator.SelfId(),
+	)
 	if err != nil {
 		return err
 	}
@@ -1182,6 +1185,23 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		return err
 	}
 
+	historyRepoFactoryArgs := &historyFactory.ArgsHistoryRepositoryFactory{
+		SelfShardID:       shardCoordinator.SelfId(),
+		FullHistoryConfig: generalConfig.FullHistory,
+		Hasher:            coreComponents.Hasher,
+		Marshalizer:       coreComponents.InternalMarshalizer,
+		Store:             dataComponents.Store,
+	}
+	historyRepositoryFactory, err := historyFactory.NewHistoryRepositoryFactory(historyRepoFactoryArgs)
+	if err != nil {
+		return err
+	}
+
+	historyRepository, err := historyRepositoryFactory.Create()
+	if err != nil {
+		return err
+	}
+
 	log.Trace("creating process components")
 	processArgs := factory.NewProcessComponentsFactoryArgs(
 		&coreArgs,
@@ -1199,7 +1219,6 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		stateComponents,
 		networkComponents,
 		triesComponents,
-		coreServiceContainer,
 		requestedItemsHandler,
 		whiteListRequest,
 		whiteListerVerifiedTxs,
@@ -1219,7 +1238,11 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		systemSCConfig,
 		version,
 		importStartHandler,
+		coreComponents.Uint64ByteSliceConverter,
 		workingDir,
+		elasticIndexer,
+		tpsBenchmark,
+		historyRepository,
 	)
 	processComponents, err := factory.ProcessComponentsFactory(processArgs)
 	if err != nil {
@@ -1243,15 +1266,19 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		chanStopNodeProcess,
 		epochStartNotifier,
 		importStartHandler,
+		genesisNodesConfig,
 		workingDir,
 	)
 	if err != nil {
 		return err
 	}
 
-	var elasticIndexer indexer.Indexer
-	if !check.IfNil(coreServiceContainer) && !check.IfNil(coreServiceContainer.Indexer()) {
-		elasticIndexer = coreServiceContainer.Indexer()
+	err = hardForkTrigger.AddCloser(nodeShufflerOut)
+	if err != nil {
+		return fmt.Errorf("%w when adding nodeShufflerOut in hardForkTrigger", err)
+	}
+
+	if !elasticIndexer.IsNilIndexer() {
 		elasticIndexer.SetTxLogsProcessor(processComponents.TxLogsProcessor)
 		processComponents.TxLogsProcessor.EnableLogToBeSavedInCache()
 	}
@@ -1284,6 +1311,7 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 		whiteListerVerifiedTxs,
 		chanStopNodeProcess,
 		hardForkTrigger,
+		historyRepository,
 	)
 	if err != nil {
 		return err
@@ -1357,6 +1385,8 @@ func startNode(ctx *cli.Context, log logger.Logger, version string) error {
 			PprofEnabled:     ctx.GlobalBool(profileMode.Name),
 		},
 		ApiRoutesConfig: *apiRoutesConfig,
+		AccountsState:   stateComponents.AccountsAdapter,
+		PeerState:       stateComponents.PeerAccounts,
 	}
 
 	ef, err := facade.NewNodeFacade(argNodeFacade)
@@ -1726,6 +1756,7 @@ func createShardCoordinator(
 }
 
 func createNodesCoordinator(
+	log logger.Logger,
 	nodesConfig *sharding.NodesSetup,
 	prefsConfig config.PreferencesConfig,
 	epochStartNotifier epochStart.RegistrationHandler,
@@ -1740,10 +1771,10 @@ func createNodesCoordinator(
 	chanStopNodeProcess chan endProcess.ArgEndProcess,
 	bootstrapParameters bootstrap.Parameters,
 	startEpoch uint32,
-) (sharding.NodesCoordinator, error) {
+) (sharding.NodesCoordinator, update.Closer, error) {
 	shardIDAsObserver, err := processDestinationShardAsObserver(prefsConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if shardIDAsObserver == core.DisabledShardIDAsObserver {
 		shardIDAsObserver = uint32(0)
@@ -1756,12 +1787,12 @@ func createNodesCoordinator(
 
 	eligibleValidators, errEligibleValidators := sharding.NodesInfoToValidators(eligibleNodesInfo)
 	if errEligibleValidators != nil {
-		return nil, errEligibleValidators
+		return nil, nil, errEligibleValidators
 	}
 
 	waitingValidators, errWaitingValidators := sharding.NodesInfoToValidators(waitingNodesInfo)
 	if errWaitingValidators != nil {
-		return nil, errWaitingValidators
+		return nil, nil, errWaitingValidators
 	}
 
 	currentEpoch := startEpoch
@@ -1771,46 +1802,58 @@ func createNodesCoordinator(
 		eligibles := nodeRegistry.EpochsConfig[fmt.Sprintf("%d", currentEpoch)].EligibleValidators
 		eligibleValidators, err = sharding.SerializableValidatorsToValidators(eligibles)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		waitings := nodeRegistry.EpochsConfig[fmt.Sprintf("%d", currentEpoch)].WaitingValidators
 		waitingValidators, err = sharding.SerializableValidatorsToValidators(waitings)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	pubKeyBytes, err := pubKey.ToByteArray()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	consensusGroupCache, err := lrucache.NewCache(25000)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	thresholdEpochDuration := epochConfig.ShuffledOutRestartThreshold
-	if !(thresholdEpochDuration >= 0.0 && thresholdEpochDuration <= 1.0) {
-		return nil, fmt.Errorf("invalid threshold for shuffled out handler")
+	maxThresholdEpochDuration := epochConfig.MaxShuffledOutRestartThreshold
+	if !(maxThresholdEpochDuration >= 0.0 && maxThresholdEpochDuration <= 1.0) {
+		return nil, nil, fmt.Errorf("invalid max threshold for shuffled out handler")
 	}
-	maxDurationBeforeStopProcess := int64(nodesConfig.RoundDuration) * epochConfig.RoundsPerEpoch
-	maxDurationBeforeStopProcess = int64(thresholdEpochDuration * float64(maxDurationBeforeStopProcess))
-	intRandomizer := &random.ConcurrentSafeIntRandomizer{}
-	randDurationBeforeStop := intRandomizer.Intn(int(maxDurationBeforeStopProcess))
-	endOfProcessingHandler := func(argument endProcess.ArgEndProcess) error {
-		go func() {
-			time.Sleep(time.Duration(randDurationBeforeStop) * time.Millisecond)
-			fmt.Println(fmt.Sprintf("the application stops after waiting %d miliseconds because the node was "+
-				"shuffled out", randDurationBeforeStop))
-			chanStopNodeProcess <- argument
-		}()
-		return nil
+	minThresholdEpochDuration := epochConfig.MinShuffledOutRestartThreshold
+	if !(minThresholdEpochDuration >= 0.0 && minThresholdEpochDuration <= 1.0) {
+		return nil, nil, fmt.Errorf("invalid min threshold for shuffled out handler")
 	}
-	shuffledOutHandler, err := sharding.NewShuffledOutTrigger(pubKeyBytes, currentShardID, endOfProcessingHandler)
+
+	epochDuration := int64(nodesConfig.RoundDuration) * epochConfig.RoundsPerEpoch
+	minDurationBeforeStopProcess := int64(minThresholdEpochDuration * float64(epochDuration))
+	maxDurationBeforeStopProcess := int64(maxThresholdEpochDuration * float64(epochDuration))
+
+	minDurationInterval := time.Millisecond * time.Duration(minDurationBeforeStopProcess)
+	maxDurationInterval := time.Millisecond * time.Duration(maxDurationBeforeStopProcess)
+
+	log.Debug("closing.NewShuffleOutCloser",
+		"minDurationInterval", minDurationInterval,
+		"maxDurationInterval", maxDurationInterval,
+	)
+
+	nodeShufflerOut, err := closing.NewShuffleOutCloser(
+		minDurationInterval,
+		maxDurationInterval,
+		chanStopNodeProcess,
+	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	shuffledOutHandler, err := sharding.NewShuffledOutTrigger(pubKeyBytes, currentShardID, nodeShufflerOut.EndOfProcessingHandler)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	argumentsNodesCoordinator := sharding.ArgNodesCoordinator{
@@ -1834,15 +1877,15 @@ func createNodesCoordinator(
 
 	baseNodesCoordinator, err := sharding.NewIndexHashedNodesCoordinator(argumentsNodesCoordinator)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	nodesCoordinator, err := sharding.NewIndexHashedNodesCoordinatorWithRater(baseNodesCoordinator, ratingAndListIndexHandler)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return nodesCoordinator, nil
+	return nodesCoordinator, nodeShufflerOut, nil
 }
 
 func processDestinationShardAsObserver(prefsConfig config.PreferencesConfig) (uint32, error) {
@@ -1871,8 +1914,8 @@ func processDestinationShardAsObserver(prefsConfig config.PreferencesConfig) (ui
 // authentication for the server is using the username and password
 func createElasticIndexer(
 	ctx *cli.Context,
+	log logger.Logger,
 	elasticSearchConfig config.ElasticSearchConfig,
-	url string,
 	marshalizer marshal.Marshalizer,
 	hasher hashing.Hasher,
 	nodesCoordinator sharding.NodesCoordinator,
@@ -1881,8 +1924,15 @@ func createElasticIndexer(
 	validatorPubkeyConverter core.PubkeyConverter,
 	shardId uint32,
 ) (indexer.Indexer, error) {
+
+	if !elasticSearchConfig.Enabled {
+		log.Debug("elastic search indexing not enabled, will create a NilIndexer")
+		return indexer.NewNilIndexer(), nil
+	}
+
+	log.Debug("elastic search indexing enabled, will create an ElasticIndexer")
 	arguments := indexer.ElasticIndexerArgs{
-		Url:                      url,
+		Url:                      elasticSearchConfig.URL,
 		UserName:                 elasticSearchConfig.Username,
 		Password:                 elasticSearchConfig.Password,
 		Marshalizer:              marshalizer,
@@ -1895,15 +1945,8 @@ func createElasticIndexer(
 		ShardId:                  shardId,
 	}
 
-	var err error
-	dbIndexer, err = indexer.NewElasticIndexer(arguments)
-	if err != nil {
-		return nil, err
-	}
-
-	return dbIndexer, nil
+	return indexer.NewElasticIndexer(arguments)
 }
-
 func getConsensusGroupSize(nodesConfig *sharding.NodesSetup, shardCoordinator sharding.Coordinator) (uint32, error) {
 	if shardCoordinator.SelfId() == core.MetachainShardId {
 		return nodesConfig.MetaChainConsensusGroupSize, nil
@@ -1932,6 +1975,7 @@ func createHardForkTrigger(
 	chanStopNodeProcess chan endProcess.ArgEndProcess,
 	epochNotifier factory.EpochStartNotifier,
 	importStartHandler update.ImportStartHandler,
+	nodesSetup update.GenesisNodesSetupHandler,
 	workingDir string,
 ) (node.HardforkTrigger, error) {
 
@@ -1965,13 +2009,15 @@ func createHardForkTrigger(
 		ExportFolder:             exportFolder,
 		ExportTriesStorageConfig: hardForkConfig.ExportTriesStorageConfig,
 		ExportStateStorageConfig: hardForkConfig.ExportStateStorageConfig,
+		ExportStateKeysConfig:    hardForkConfig.ExportKeysStorageConfig,
 		WhiteListHandler:         whiteListRequest,
 		WhiteListerVerifiedTxs:   whiteListerVerifiedTxs,
 		InterceptorsContainer:    process.InterceptorsContainer,
 		MultiSigner:              crypto.MultiSigner,
 		NodesCoordinator:         nodesCoordinator,
 		SingleSigner:             crypto.TxSingleSigner,
-		AddressPubkeyConverter:   stateComponents.AddressPubkeyConverter,
+		AddressPubKeyConverter:   stateComponents.AddressPubkeyConverter,
+		ValidatorPubKeyConverter: stateComponents.ValidatorPubkeyConverter,
 		BlockKeyGen:              keyGen,
 		KeyGen:                   crypto.TxSignKeyGen,
 		BlockSigner:              crypto.SingleSigner,
@@ -1982,6 +2028,8 @@ func createHardForkTrigger(
 		OutputAntifloodHandler:   network.OutputAntifloodHandler,
 		ValidityAttester:         process.BlockTracker,
 		ChainID:                  coreData.ChainID,
+		Rounder:                  process.Rounder,
+		GenesisNodesSetupHandler: nodesSetup,
 	}
 	hardForkExportFactory, err := exportFactory.NewExportHandlerFactory(argsExporter)
 	if err != nil {
@@ -2037,6 +2085,7 @@ func createNode(
 	whiteListerVerifiedTxs process.WhiteListHandler,
 	chanStopNodeProcess chan endProcess.ArgEndProcess,
 	hardForkTrigger node.HardforkTrigger,
+	historyRepository fullHistory.HistoryRepository,
 ) (*node.Node, error) {
 	var err error
 	var consensusGroupSize uint32
@@ -2156,6 +2205,8 @@ func createNode(
 		node.WithNodeStopChannel(chanStopNodeProcess),
 		node.WithPeerHonestyHandler(peerHonestyHandler),
 		node.WithWatchdogTimer(watchdogTimer),
+		node.WithPeerSignatureHandler(crypto.PeerSignatureHandler),
+		node.WithHistoryRepository(historyRepository),
 	)
 	if err != nil {
 		return nil, errors.New("error creating node: " + err.Error())
@@ -2230,32 +2281,6 @@ func initStatsFileMonitor(
 	}
 
 	return nil
-}
-
-func setServiceContainer(shardCoordinator sharding.Coordinator, tpsBenchmark *statistics.TpsBenchmark) error {
-	var err error
-	if shardCoordinator.SelfId() < shardCoordinator.NumberOfShards() {
-		coreServiceContainer, err = serviceContainer.NewServiceContainer(serviceContainer.WithIndexer(dbIndexer))
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	if shardCoordinator.SelfId() == core.MetachainShardId {
-		var indexerToUse indexer.Indexer
-		indexerToUse = indexer.NewNilIndexer()
-		if dbIndexer != nil {
-			indexerToUse = dbIndexer
-		}
-		coreServiceContainer, err = serviceContainer.NewServiceContainer(
-			serviceContainer.WithIndexer(indexerToUse),
-			serviceContainer.WithTPSBenchmark(tpsBenchmark))
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	return errors.New("could not init core service container")
 }
 
 func startStatisticsMonitor(
