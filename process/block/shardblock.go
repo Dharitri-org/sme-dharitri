@@ -8,7 +8,6 @@ import (
 
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
-	"github.com/Dharitri-org/sme-dharitri/core/serviceContainer"
 	"github.com/Dharitri-org/sme-dharitri/data"
 	"github.com/Dharitri-org/sme-dharitri/data/block"
 	"github.com/Dharitri-org/sme-dharitri/data/state"
@@ -31,7 +30,6 @@ type shardProcessor struct {
 	chRcvAllMetaHdrs  chan bool
 
 	processedMiniBlocks *processedMb.ProcessedMiniBlockTracker
-	core                serviceContainer.Core
 }
 
 // NewShardProcessor creates a new shardProcessor object
@@ -75,12 +73,14 @@ func NewShardProcessor(arguments ArgShardProcessor) (*shardProcessor, error) {
 		stateCheckpointModulus: arguments.StateCheckpointModulus,
 		blockChain:             arguments.BlockChain,
 		feeHandler:             arguments.FeeHandler,
+		indexer:                arguments.Indexer,
+		tpsBenchmark:           arguments.TpsBenchmark,
 		genesisNonce:           genesisHdr.GetNonce(),
 		version:                core.TrimSoftwareVersion(arguments.Version),
+		historyRepo:            arguments.HistoryRepository,
 	}
 
 	sp := shardProcessor{
-		core:          arguments.Core,
 		baseProcessor: base,
 	}
 
@@ -215,7 +215,7 @@ func (sp *shardProcessor) ProcessBlock(
 	}
 
 	defer func() {
-		go sp.checkAndRequestIfMetaHeadersMissing(header.Round)
+		go sp.checkAndRequestIfMetaHeadersMissing()
 	}()
 
 	err = sp.checkEpochCorrectnessCrossChain()
@@ -490,10 +490,10 @@ func (sp *shardProcessor) checkMetaHdrFinality(header data.HeaderHandler) error 
 	return nil
 }
 
-func (sp *shardProcessor) checkAndRequestIfMetaHeadersMissing(round uint64) {
+func (sp *shardProcessor) checkAndRequestIfMetaHeadersMissing() {
 	orderedMetaBlocks, _ := sp.blockTracker.GetTrackedHeaders(core.MetachainShardId)
 
-	err := sp.requestHeadersIfMissing(orderedMetaBlocks, core.MetachainShardId, round)
+	err := sp.requestHeadersIfMissing(orderedMetaBlocks, core.MetachainShardId)
 	if err != nil {
 		log.Debug("checkAndRequestIfMetaHeadersMissing", "error", err.Error())
 	}
@@ -504,7 +504,7 @@ func (sp *shardProcessor) indexBlockIfNeeded(
 	header data.HeaderHandler,
 	lastBlockHeader data.HeaderHandler,
 ) {
-	if check.IfNil(sp.core) || check.IfNil(sp.core.Indexer()) {
+	if sp.indexer.IsNilIndexer() {
 		return
 	}
 	if check.IfNil(header) {
@@ -577,9 +577,9 @@ func (sp *shardProcessor) indexBlockIfNeeded(
 		return
 	}
 
-	go sp.core.Indexer().SaveBlock(body, header, txPool, signersIndexes, nil)
+	go sp.indexer.SaveBlock(body, header, txPool, signersIndexes, nil)
 
-	indexRoundInfo(sp.core.Indexer(), sp.nodesCoordinator, shardId, header, lastBlockHeader, signersIndexes)
+	indexRoundInfo(sp.indexer, sp.nodesCoordinator, shardId, header, lastBlockHeader, signersIndexes)
 }
 
 // RestoreBlockIntoPools restores the TxBlock and MetaBlock into associated pools
@@ -852,6 +852,7 @@ func (sp *shardProcessor) CommitBlock(
 
 	sp.blockChain.SetCurrentBlockHeaderHash(headerHash)
 	sp.indexBlockIfNeeded(bodyHandler, headerHandler, lastBlockHeader)
+	sp.saveHistoryData(headerHash, headerHandler, bodyHandler)
 
 	lastCrossNotarizedHeader, _, err := sp.blockTracker.GetLastCrossNotarizedHeader(core.MetachainShardId)
 	if err != nil {
@@ -949,7 +950,12 @@ func (sp *shardProcessor) updateState(headers []data.HeaderHandler, currentHeade
 			break
 		}
 
-		prevHeader, errNotCritical := process.GetShardHeaderFromStorage(hdr.GetPrevHash(), sp.marshalizer, sp.store)
+		prevHeader, errNotCritical := process.GetShardHeader(
+			hdr.GetPrevHash(),
+			sp.dataPool.Headers(),
+			sp.marshalizer,
+			sp.store,
+		)
 		if errNotCritical != nil {
 			log.Debug("could not get shard header from storage")
 			return
@@ -1040,8 +1046,9 @@ func (sp *shardProcessor) checkEpochCorrectnessCrossChain() error {
 		}
 
 		shouldRevertChain = true
-		prevHeader, err := process.GetShardHeaderFromStorage(
+		prevHeader, err := process.GetShardHeader(
 			currentHeader.GetPrevHash(),
+			sp.dataPool.Headers(),
 			sp.marshalizer,
 			sp.store,
 		)
@@ -1065,7 +1072,7 @@ func (sp *shardProcessor) checkEpochCorrectnessCrossChain() error {
 }
 
 func (sp *shardProcessor) getLastSelfNotarizedHeaderByMetachain() (data.HeaderHandler, []byte) {
-	if sp.forkDetector.GetHighestFinalBlockNonce() == 0 {
+	if sp.forkDetector.GetHighestFinalBlockNonce() == sp.genesisNonce {
 		return sp.blockChain.GetGenesisHeader(), sp.blockChain.GetGenesisHeaderHash()
 	}
 
@@ -1696,7 +1703,7 @@ func (sp *shardProcessor) applyBodyToHeader(shardHeader *block.Header, body *blo
 	shardHeader.RootHash = sp.getRootHash()
 
 	defer func() {
-		go sp.checkAndRequestIfMetaHeadersMissing(shardHeader.GetRound())
+		go sp.checkAndRequestIfMetaHeadersMissing()
 	}()
 
 	if check.IfNil(body) {

@@ -399,12 +399,12 @@ func checkAddressHasDCTTokens(
 
 func getDCTDataFromKey(userAcnt state.UserAccountHandler, key []byte) (*builtInFunctions.DCToken, error) {
 	dctData := &builtInFunctions.DCToken{Value: big.NewInt(0)}
-	marshalledData, err := userAcnt.DataTrieTracker().RetrieveValue(key)
+	marshaledData, err := userAcnt.DataTrieTracker().RetrieveValue(key)
 	if err != nil {
 		return dctData, nil
 	}
 
-	err = integrationTests.TestMarshalizer.Unmarshal(dctData, marshalledData)
+	err = integrationTests.TestMarshalizer.Unmarshal(dctData, marshaledData)
 	if err != nil {
 		return nil, err
 	}

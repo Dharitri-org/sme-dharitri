@@ -10,6 +10,9 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/consensus"
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
+	"github.com/Dharitri-org/sme-dharitri/core/fullHistory"
+	"github.com/Dharitri-org/sme-dharitri/core/indexer"
+	"github.com/Dharitri-org/sme-dharitri/core/statistics"
 	"github.com/Dharitri-org/sme-dharitri/data"
 	"github.com/Dharitri-org/sme-dharitri/data/block"
 	"github.com/Dharitri-org/sme-dharitri/data/state"
@@ -71,6 +74,10 @@ type baseProcessor struct {
 	stateCheckpointModulus uint
 	blockProcessor         blockProcessor
 	txCounter              *transactionCounter
+
+	indexer      indexer.Indexer
+	tpsBenchmark statistics.TPSBenchmark
+	historyRepo  fullHistory.HistoryRepository
 }
 
 type bootStorerDataArgs struct {
@@ -205,7 +212,6 @@ func (bp *baseProcessor) getRootHash() []byte {
 func (bp *baseProcessor) requestHeadersIfMissing(
 	sortedHdrs []data.HeaderHandler,
 	shardId uint32,
-	maxRound uint64,
 ) error {
 
 	prevHdr, _, err := bp.blockTracker.GetLastCrossNotarizedHeader(shardId)
@@ -214,9 +220,9 @@ func (bp *baseProcessor) requestHeadersIfMissing(
 	}
 
 	lastNotarizedHdrRound := prevHdr.GetRound()
+	lastNotarizedHdrNonce := prevHdr.GetNonce()
 
 	missingNonces := make([]uint64, 0)
-	isMaxLimitReached := false
 	for i := 0; i < len(sortedHdrs); i++ {
 		currHdr := sortedHdrs[i]
 		if currHdr == nil {
@@ -228,38 +234,24 @@ func (bp *baseProcessor) requestHeadersIfMissing(
 			continue
 		}
 
-		hdrTooNew := currHdr.GetRound() > maxRound
-		if hdrTooNew {
-			isMaxLimitReached = true
-		}
-
-		if !bp.blockTracker.ShouldAddHeader(currHdr) {
-			isMaxLimitReached = true
-		}
-
-		roundsDiff := int64(maxRound) - int64(prevHdr.GetRound())
-		noncesDiff := int64(currHdr.GetNonce()) - int64(prevHdr.GetNonce())
-		minDiff := core.MinInt64(roundsDiff, noncesDiff)
-
-		if minDiff > 1 {
-			numNonces := uint64(minDiff) - 1
-			startNonce := prevHdr.GetNonce() + 1
-			endNonce := startNonce + numNonces
-
-			for j := startNonce; j < endNonce; j++ {
-				missingNonces = append(missingNonces, j)
-				if len(missingNonces) >= process.MaxHeaderRequestsAllowed {
-					isMaxLimitReached = true
-					break
-				}
-			}
-		}
-
-		if isMaxLimitReached {
+		maxNumNoncesToAdd := process.MaxHeaderRequestsAllowed - int(int64(prevHdr.GetNonce())-int64(lastNotarizedHdrNonce))
+		if maxNumNoncesToAdd <= 0 {
 			break
 		}
 
+		noncesDiff := int64(currHdr.GetNonce()) - int64(prevHdr.GetNonce())
+		nonces := addMissingNonces(noncesDiff, prevHdr.GetNonce(), maxNumNoncesToAdd)
+		missingNonces = append(missingNonces, nonces...)
+
 		prevHdr = currHdr
+	}
+
+	maxNumNoncesToAdd := process.MaxHeaderRequestsAllowed - int(int64(prevHdr.GetNonce())-int64(lastNotarizedHdrNonce))
+	if maxNumNoncesToAdd > 0 {
+		lastRound := bp.rounder.Index() - 1
+		roundsDiff := lastRound - int64(prevHdr.GetRound())
+		nonces := addMissingNonces(roundsDiff, prevHdr.GetNonce(), maxNumNoncesToAdd)
+		missingNonces = append(missingNonces, nonces...)
 	}
 
 	for _, nonce := range missingNonces {
@@ -267,6 +259,27 @@ func (bp *baseProcessor) requestHeadersIfMissing(
 	}
 
 	return nil
+}
+
+func addMissingNonces(diff int64, lastNonce uint64, maxNumNoncesToAdd int) []uint64 {
+	missingNonces := make([]uint64, 0)
+
+	if diff < 2 {
+		return missingNonces
+	}
+
+	numNonces := uint64(diff) - 1
+	startNonce := lastNonce + 1
+	endNonce := startNonce + numNonces
+
+	for nonce := startNonce; nonce < endNonce; nonce++ {
+		missingNonces = append(missingNonces, nonce)
+		if len(missingNonces) >= maxNumNoncesToAdd {
+			break
+		}
+	}
+
+	return missingNonces
 }
 
 func displayHeader(headerHandler data.HeaderHandler) []*display.LineData {
@@ -395,6 +408,15 @@ func checkProcessorNilParameters(arguments ArgBaseProcessor) error {
 	}
 	if check.IfNil(arguments.BlockSizeThrottler) {
 		return process.ErrNilBlockSizeThrottler
+	}
+	if check.IfNil(arguments.Indexer) {
+		return process.ErrNilIndexer
+	}
+	if check.IfNil(arguments.TpsBenchmark) {
+		return process.ErrNilTpsBenchmark
+	}
+	if check.IfNil(arguments.HistoryRepository) {
+		return process.ErrNilHistoryRepository
 	}
 	if len(arguments.Version) == 0 {
 		return process.ErrEmptySoftwareVersion
@@ -890,7 +912,7 @@ func deleteSelfReceiptsMiniBlocks(body *block.Body) *block.Body {
 }
 
 func (bp *baseProcessor) getNoncesToFinal(headerHandler data.HeaderHandler) uint64 {
-	currentBlockNonce := uint64(0)
+	currentBlockNonce := bp.genesisNonce
 	if !check.IfNil(headerHandler) {
 		currentBlockNonce = headerHandler.GetNonce()
 	}
@@ -1164,20 +1186,33 @@ func (bp *baseProcessor) requestMiniBlocksIfNeeded(headerHandler data.HeaderHand
 		return
 	}
 
-	if headerHandler.GetNonce() <= lastCrossNotarizedHeader.GetNonce() {
-		return
-	}
-	if headerHandler.GetRound() <= lastCrossNotarizedHeader.GetRound() {
-		return
-	}
-
 	isHeaderOutOfRequestRange := headerHandler.GetNonce() > lastCrossNotarizedHeader.GetNonce()+process.MaxHeadersToRequestInAdvance
 	if isHeaderOutOfRequestRange {
 		return
 	}
 
+	waitTime := core.ExtraDelayForRequestBlockInfo
+	roundDifferences := bp.rounder.Index() - int64(headerHandler.GetRound())
+	if roundDifferences > 1 {
+		waitTime = 0
+	}
+
 	// waiting for late broadcast of mini blocks and transactions to be done and received
-	time.Sleep(core.ExtraDelayForRequestBlockInfo)
+	time.Sleep(waitTime)
 
 	bp.txCoordinator.RequestMiniBlocks(headerHandler)
+}
+
+func (bp *baseProcessor) saveHistoryData(headerHash []byte, header data.HeaderHandler, body data.BodyHandler) {
+	historyTransactionData := &fullHistory.HistoryTransactionsData{
+		HeaderHash:    headerHash,
+		HeaderHandler: header,
+		BodyHandler:   body,
+	}
+
+	err := bp.historyRepo.PutTransactionsData(historyTransactionData)
+	if err != nil {
+		log.Warn("history processor: cannot save transaction data",
+			"error", err.Error())
+	}
 }

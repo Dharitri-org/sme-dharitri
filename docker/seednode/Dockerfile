@@ -1,5 +1,5 @@
-FROM golang:1.13.6 as builder
-MAINTAINER DharitriNetwork
+FROM golang:1.19.12 as builder
+MAINTAINER Dharitri-org
 
 WORKDIR /go/sme-dharitri
 COPY . .

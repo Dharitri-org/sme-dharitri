@@ -7,6 +7,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/consensus"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
 	"github.com/Dharitri-org/sme-dharitri/crypto"
+	"github.com/Dharitri-org/sme-dharitri/crypto/peerSignatureHandler"
 	"github.com/Dharitri-org/sme-dharitri/crypto/signing"
 	"github.com/Dharitri-org/sme-dharitri/crypto/signing/ed25519"
 	"github.com/Dharitri-org/sme-dharitri/crypto/signing/ed25519/singlesig"
@@ -18,6 +19,8 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/hashing/blake2b"
 	"github.com/Dharitri-org/sme-dharitri/hashing/sha256"
 	"github.com/Dharitri-org/sme-dharitri/sharding"
+	storageFactory "github.com/Dharitri-org/sme-dharitri/storage/factory"
+	"github.com/Dharitri-org/sme-dharitri/storage/storageUnit"
 	"github.com/Dharitri-org/sme-dharitri/vm"
 	systemVM "github.com/Dharitri-org/sme-dharitri/vm/process"
 )
@@ -105,14 +108,26 @@ func (ccf *cryptoComponentsFactory) Create() (*CryptoComponents, error) {
 		}
 	}
 
+	cacheConfig := ccf.config.PublicKeyPIDSignature
+	cachePkPIDSignature, err := storageUnit.NewCache(storageFactory.GetCacherFromConfig(cacheConfig))
+	if err != nil {
+		return nil, err
+	}
+
+	peerSigHandler, err := peerSignatureHandler.NewPeerSignatureHandler(cachePkPIDSignature, singleSigner, ccf.keyGen)
+	if err != nil {
+		return nil, err
+	}
+
 	return &CryptoComponents{
-		TxSingleSigner:      txSingleSigner,
-		SingleSigner:        singleSigner,
-		MultiSigner:         multiSigner,
-		BlockSignKeyGen:     ccf.keyGen,
-		TxSignKeyGen:        txSignKeyGen,
-		InitialPubKeys:      initialPubKeys,
-		MessageSignVerifier: messageSignVerifier,
+		TxSingleSigner:       txSingleSigner,
+		SingleSigner:         singleSigner,
+		MultiSigner:          multiSigner,
+		BlockSignKeyGen:      ccf.keyGen,
+		TxSignKeyGen:         txSignKeyGen,
+		InitialPubKeys:       initialPubKeys,
+		MessageSignVerifier:  messageSignVerifier,
+		PeerSignatureHandler: peerSigHandler,
 	}, nil
 }
 

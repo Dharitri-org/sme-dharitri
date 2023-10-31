@@ -232,6 +232,8 @@ func (af *p2pAntiflood) SetDebugger(debugger process.AntifloodDebugger) error {
 
 // BlacklistPeer will add a peer to the black list
 func (af *p2pAntiflood) BlacklistPeer(peer core.PeerID, reason string, duration time.Duration) {
+	peerIsBlacklisted := af.blacklistHandler.Has(peer)
+
 	err := af.blacklistHandler.Upsert(peer, duration)
 	if err != nil {
 		log.Warn("error adding in blacklist",
@@ -243,11 +245,13 @@ func (af *p2pAntiflood) BlacklistPeer(peer core.PeerID, reason string, duration 
 		return
 	}
 
-	log.Debug("blacklisted peer",
-		"pid", peer.Pretty(),
-		"time", duration,
-		"reason", reason,
-	)
+	if !peerIsBlacklisted {
+		log.Debug("blacklisted peer",
+			"pid", peer.Pretty(),
+			"time", duration,
+			"reason", reason,
+		)
+	}
 }
 
 // Close will call the close function on all sub components

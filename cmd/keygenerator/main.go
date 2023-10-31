@@ -56,7 +56,7 @@ VERSION:
 	keyType = cli.StringFlag{
 		Name:        "key-type",
 		Usage:       "What king of keys should generate. Available options: validator, wallet, both",
-		Value:       "validator",
+		Value:       "wallet",
 		Destination: &argsConfig.keyType,
 	}
 

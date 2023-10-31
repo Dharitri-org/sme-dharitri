@@ -71,6 +71,10 @@ func TestDct_ExecuteIssue(t *testing.T) {
 	output = e.Execute(vmInput)
 
 	assert.Equal(t, vmcommon.Ok, output)
+
+	vmInput.Arguments[0] = []byte("01234567891&*@")
+	output = e.Execute(vmInput)
+	assert.Equal(t, vmcommon.UserError, output)
 }
 
 func TestDct_ExecuteInit(t *testing.T) {
@@ -136,4 +140,30 @@ func TestDct_ExecuteIssueProtected(t *testing.T) {
 	output = e.Execute(vmInput)
 
 	assert.Equal(t, vmcommon.Ok, output)
+}
+
+func TestDct_ExecuteIssueDisabled(t *testing.T) {
+	t.Parallel()
+
+	args := createMockArgumentsForDCT()
+	args.DCTSCConfig.Disabled = true
+	e, _ := NewDCTSmartContract(args)
+
+	callValue, _ := big.NewInt(0).SetString(args.DCTSCConfig.BaseIssuingCost, 10)
+	vmInput := &vmcommon.ContractCallInput{
+		VMInput: vmcommon.VMInput{
+			CallerAddr:     []byte("addr"),
+			Arguments:      [][]byte{[]byte("01234567891")},
+			CallValue:      callValue,
+			CallType:       0,
+			GasPrice:       0,
+			GasProvided:    args.GasCost.MetaChainSystemSCsCost.DCTIssue,
+			OriginalTxHash: nil,
+			CurrentTxHash:  nil,
+		},
+		RecipientAddr: []byte("addr"),
+		Function:      "issue",
+	}
+	output := e.Execute(vmInput)
+	assert.Equal(t, vmcommon.UserError, output)
 }

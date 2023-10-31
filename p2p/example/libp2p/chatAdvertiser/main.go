@@ -16,8 +16,8 @@ import (
 
 var logger = log.Logger("rendezvous")
 
-var protocolID = "/dharitri/1.0.0"
-var randevouzString = "Dhariti - randevous"
+var protocolID = "/Dharitri-org/1.0.0"
+var randevouzString = "Dharitri-org - randevous"
 
 func handleStream(stream network.Stream) {
 	logger.Info("Got a new stream!")

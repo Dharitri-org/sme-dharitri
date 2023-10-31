@@ -10,7 +10,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/consensus"
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
-	"github.com/Dharitri-org/sme-dharitri/core/close"
+	"github.com/Dharitri-org/sme-dharitri/core/closing"
 	"github.com/Dharitri-org/sme-dharitri/data"
 	"github.com/Dharitri-org/sme-dharitri/data/block"
 	"github.com/Dharitri-org/sme-dharitri/data/state"
@@ -27,7 +27,7 @@ import (
 
 var log = logger.GetOrCreate("process/sync")
 
-var _ close.Closer = (*baseBootstrap)(nil)
+var _ closing.Closer = (*baseBootstrap)(nil)
 
 // sleepTime defines the time in milliseconds between each iteration made in syncBlocks method
 const sleepTime = 5 * time.Millisecond

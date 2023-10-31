@@ -187,16 +187,17 @@ func CreateTxProcessorWithOneSCExecutorMockVM(accnts state.AccountsAdapter, opGa
 	defaults.FillGasMapInternal(gasSchedule, 1)
 
 	argsNewSCProcessor := smartContract.ArgsNewSmartContractProcessor{
-		VmContainer:  vmContainer,
-		ArgsParser:   smartContract.NewArgumentParser(),
-		Hasher:       testHasher,
-		Marshalizer:  testMarshalizer,
-		AccountsDB:   accnts,
-		TempAccounts: blockChainHook,
-		PubkeyConv:   pubkeyConv,
-		Coordinator:  oneShardCoordinator,
-		ScrForwarder: &mock.IntermediateTransactionHandlerMock{},
-		TxFeeHandler: &mock.UnsignedTxHandlerMock{},
+		VmContainer:    vmContainer,
+		ArgsParser:     smartContract.NewArgumentParser(),
+		Hasher:         testHasher,
+		Marshalizer:    testMarshalizer,
+		AccountsDB:     accnts,
+		BlockChainHook: blockChainHook,
+		PubkeyConv:     pubkeyConv,
+		Coordinator:    oneShardCoordinator,
+		ScrForwarder:   &mock.IntermediateTransactionHandlerMock{},
+		BadTxForwarder: &mock.IntermediateTransactionHandlerMock{},
+		TxFeeHandler:   &mock.UnsignedTxHandlerMock{},
 		EconomicsFee: &mock.FeeHandlerStub{
 			DeveloperPercentageCalled: func() float64 {
 				return 0.0
@@ -211,22 +212,24 @@ func CreateTxProcessorWithOneSCExecutorMockVM(accnts state.AccountsAdapter, opGa
 	}
 	scProcessor, _ := smartContract.NewSmartContractProcessor(argsNewSCProcessor)
 
-	txProcessor, _ := transaction.NewTxProcessor(
-		accnts,
-		testHasher,
-		pubkeyConv,
-		testMarshalizer,
-		testMarshalizer,
-		oneShardCoordinator,
-		scProcessor,
-		&mock.UnsignedTxHandlerMock{},
-		txTypeHandler,
-		&mock.FeeHandlerStub{},
-		&mock.IntermediateTransactionHandlerMock{},
-		&mock.IntermediateTransactionHandlerMock{},
-		smartContract.NewArgumentParser(),
-		&mock.IntermediateTransactionHandlerMock{},
-	)
+	argsNewTxProcessor := transaction.ArgsNewTxProcessor{
+		Accounts:          accnts,
+		Hasher:            testHasher,
+		PubkeyConv:        pubkeyConv,
+		Marshalizer:       testMarshalizer,
+		SignMarshalizer:   testMarshalizer,
+		ShardCoordinator:  oneShardCoordinator,
+		ScProcessor:       scProcessor,
+		TxFeeHandler:      &mock.UnsignedTxHandlerMock{},
+		TxTypeHandler:     txTypeHandler,
+		EconomicsFee:      &mock.FeeHandlerStub{},
+		ReceiptForwarder:  &mock.IntermediateTransactionHandlerMock{},
+		BadTxForwarder:    &mock.IntermediateTransactionHandlerMock{},
+		ArgsParser:        smartContract.NewArgumentParser(),
+		ScrForwarder:      &mock.IntermediateTransactionHandlerMock{},
+		DisabledRelayedTx: false,
+	}
+	txProcessor, _ := transaction.NewTxProcessor(argsNewTxProcessor)
 
 	return txProcessor
 }
@@ -323,16 +326,17 @@ func CreateTxProcessorWithOneSCExecutorWithVMs(
 	gasSchedule := make(map[string]map[string]uint64)
 	defaults.FillGasMapInternal(gasSchedule, 1)
 	argsNewSCProcessor := smartContract.ArgsNewSmartContractProcessor{
-		VmContainer:  vmContainer,
-		ArgsParser:   smartContract.NewArgumentParser(),
-		Hasher:       testHasher,
-		Marshalizer:  testMarshalizer,
-		AccountsDB:   accnts,
-		TempAccounts: blockChainHook,
-		PubkeyConv:   pubkeyConv,
-		Coordinator:  oneShardCoordinator,
-		ScrForwarder: &mock.IntermediateTransactionHandlerMock{},
-		TxFeeHandler: &mock.UnsignedTxHandlerMock{},
+		VmContainer:    vmContainer,
+		ArgsParser:     smartContract.NewArgumentParser(),
+		Hasher:         testHasher,
+		Marshalizer:    testMarshalizer,
+		AccountsDB:     accnts,
+		BlockChainHook: blockChainHook,
+		PubkeyConv:     pubkeyConv,
+		Coordinator:    oneShardCoordinator,
+		ScrForwarder:   &mock.IntermediateTransactionHandlerMock{},
+		BadTxForwarder: &mock.IntermediateTransactionHandlerMock{},
+		TxFeeHandler:   &mock.UnsignedTxHandlerMock{},
 		EconomicsFee: &mock.FeeHandlerStub{
 			DeveloperPercentageCalled: func() float64 {
 				return 0.0
@@ -348,22 +352,24 @@ func CreateTxProcessorWithOneSCExecutorWithVMs(
 
 	scProcessor, _ := smartContract.NewSmartContractProcessor(argsNewSCProcessor)
 
-	txProcessor, _ := transaction.NewTxProcessor(
-		accnts,
-		testHasher,
-		pubkeyConv,
-		testMarshalizer,
-		testMarshalizer,
-		oneShardCoordinator,
-		scProcessor,
-		&mock.UnsignedTxHandlerMock{},
-		txTypeHandler,
-		&mock.FeeHandlerStub{},
-		&mock.IntermediateTransactionHandlerMock{},
-		&mock.IntermediateTransactionHandlerMock{},
-		smartContract.NewArgumentParser(),
-		&mock.IntermediateTransactionHandlerMock{},
-	)
+	argsNewTxProcessor := transaction.ArgsNewTxProcessor{
+		Accounts:          accnts,
+		Hasher:            testHasher,
+		PubkeyConv:        pubkeyConv,
+		Marshalizer:       testMarshalizer,
+		SignMarshalizer:   testMarshalizer,
+		ShardCoordinator:  oneShardCoordinator,
+		ScProcessor:       scProcessor,
+		TxFeeHandler:      &mock.UnsignedTxHandlerMock{},
+		TxTypeHandler:     txTypeHandler,
+		EconomicsFee:      &mock.FeeHandlerStub{},
+		ReceiptForwarder:  &mock.IntermediateTransactionHandlerMock{},
+		BadTxForwarder:    &mock.IntermediateTransactionHandlerMock{},
+		ArgsParser:        smartContract.NewArgumentParser(),
+		ScrForwarder:      &mock.IntermediateTransactionHandlerMock{},
+		DisabledRelayedTx: false,
+	}
+	txProcessor, _ := transaction.NewTxProcessor(argsNewTxProcessor)
 
 	return txProcessor, scProcessor
 }
@@ -516,6 +522,10 @@ func TestAccount(
 ) *big.Int {
 
 	senderRecovAccount, _ := accnts.GetExistingAccount(senderAddressBytes)
+	if senderRecovAccount == nil {
+		return big.NewInt(0)
+	}
+
 	senderRecovShardAccount := senderRecovAccount.(state.UserAccountHandler)
 
 	assert.Equal(t, expectedNonce, senderRecovShardAccount.GetNonce())

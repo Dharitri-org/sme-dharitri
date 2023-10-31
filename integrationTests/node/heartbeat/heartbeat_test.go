@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	mock2 "github.com/Dharitri-org/sme-dharitri/heartbeat/mock"
+
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/crypto"
 	"github.com/Dharitri-org/sme-dharitri/crypto/signing"
@@ -211,17 +213,17 @@ func createSenderWithName(messenger p2p.Messenger, topic string, nodeName string
 	version := "v01"
 
 	argSender := process.ArgHeartbeatSender{
-		PeerMessenger:    messenger,
-		SingleSigner:     signer,
-		PrivKey:          sk,
-		Marshalizer:      integrationTests.TestMarshalizer,
-		Topic:            topic,
-		ShardCoordinator: &sharding.OneShardCoordinator{},
-		PeerTypeProvider: &mock.PeerTypeProviderStub{},
-		StatusHandler:    &mock.AppStatusHandlerStub{},
-		VersionNumber:    version,
-		NodeDisplayName:  nodeName,
-		HardforkTrigger:  &mock.HardforkTriggerStub{},
+		PeerMessenger:        messenger,
+		PeerSignatureHandler: &mock2.PeerSignatureHandler{Signer: signer},
+		PrivKey:              sk,
+		Marshalizer:          integrationTests.TestMarshalizer,
+		Topic:                topic,
+		ShardCoordinator:     &sharding.OneShardCoordinator{},
+		PeerTypeProvider:     &mock.PeerTypeProviderStub{},
+		StatusHandler:        &mock.AppStatusHandlerStub{},
+		VersionNumber:        version,
+		NodeDisplayName:      nodeName,
+		HardforkTrigger:      &mock.HardforkTriggerStub{},
 	}
 
 	sender, _ := process.NewSender(argSender)
@@ -235,8 +237,7 @@ func createMonitor(maxDurationPeerUnresponsive time.Duration) *process.Monitor {
 	marshalizer := &marshal.GogoProtoMarshalizer{}
 
 	mp, _ := process.NewMessageProcessor(
-		singlesigner,
-		keyGen,
+		&mock2.PeerSignatureHandler{Signer: singlesigner, KeyGen: keyGen},
 		marshalizer,
 		&mock.NetworkShardingCollectorStub{
 			UpdatePeerIdPublicKeyCalled: func(pid core.PeerID, pk []byte) {},

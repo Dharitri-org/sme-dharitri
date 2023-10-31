@@ -9,7 +9,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/consensus"
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
-	"github.com/Dharitri-org/sme-dharitri/core/close"
+	"github.com/Dharitri-org/sme-dharitri/core/closing"
 	"github.com/Dharitri-org/sme-dharitri/display"
 	"github.com/Dharitri-org/sme-dharitri/ntp"
 	"github.com/Dharitri-org/sme-dharitri/statusHandler"
@@ -17,7 +17,7 @@ import (
 )
 
 var _ consensus.ChronologyHandler = (*chronology)(nil)
-var _ close.Closer = (*chronology)(nil)
+var _ closing.Closer = (*chronology)(nil)
 
 var log = logger.GetOrCreate("consensus/chronology")
 
@@ -234,6 +234,8 @@ func (chr *chronology) Close() error {
 	if chr.cancelFunc != nil {
 		chr.cancelFunc()
 	}
+
+	chr.watchdog.Stop(chronologyAlarmID)
 
 	return nil
 }

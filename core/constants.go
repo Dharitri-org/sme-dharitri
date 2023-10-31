@@ -63,6 +63,9 @@ const MaxTxNonceDeltaAllowed = 30000
 // TODO convert this const into a var and read it from config when this code moves to another binary
 const MaxBulkTransactionSize = 1 << 18 //256KB bulks
 
+// NodesSetupJsonFileName specifies the name of the json file which contains the setup of the nodes
+const NodesSetupJsonFileName = "nodesSetup.json"
+
 // ConsensusTopic is the topic used in consensus algorithm
 const ConsensusTopic = "consensus"
 
@@ -483,3 +486,6 @@ const PublicKeyBlacklistDuration = time.Second * 7200
 // WrongP2PMessageBlacklistDuration represents the time to keep a peer id in the blacklist if it sends a message that
 // do not follow this protocol
 const WrongP2PMessageBlacklistDuration = time.Second * 7200
+
+// MaxWaitingTimeToReceiveRequestedItem represents the maximum waiting time in seconds needed to receive the requested items
+const MaxWaitingTimeToReceiveRequestedItem = 5 * time.Second

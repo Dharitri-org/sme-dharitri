@@ -14,6 +14,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/process"
 	"github.com/Dharitri-org/sme-dharitri/process/block/bootstrapStorage"
 	"github.com/Dharitri-org/sme-dharitri/process/mock"
+	"github.com/Dharitri-org/sme-dharitri/testscommon"
 )
 
 func (bp *baseProcessor) ComputeHeaderHash(hdr data.HeaderHandler) ([]byte, error) {
@@ -88,7 +89,6 @@ func NewShardProcessorEmptyWith3shards(
 			FeeHandler:        &mock.FeeAccumulatorStub{},
 			Uint64Converter:   &mock.Uint64ByteSliceConverterMock{},
 			RequestHandler:    &mock.RequestHandlerStub{},
-			Core:              &mock.ServiceContainerMock{},
 			BlockChainHook:    &mock.BlockChainHookHandlerMock{},
 			TxCoordinator:     &mock.TransactionCoordinatorMock{},
 			EpochStartTrigger: &mock.EpochStartTriggerStub{},
@@ -103,7 +103,10 @@ func NewShardProcessorEmptyWith3shards(
 			DataPool:           tdp,
 			BlockChain:         blockChain,
 			BlockSizeThrottler: &mock.BlockSizeThrottlerStub{},
+			Indexer:            &mock.IndexerMock{},
+			TpsBenchmark:       &testscommon.TpsBenchmarkMock{},
 			Version:            "softwareVersion",
+			HistoryRepository:  &mock.HistoryRepositoryStub{},
 		},
 	}
 	shardProc, err := NewShardProcessor(arguments)
@@ -195,6 +198,10 @@ func (bp *baseProcessor) SetHeaderValidator(validator process.HeaderConstruction
 	bp.headerValidator = validator
 }
 
+func (bp *baseProcessor) RequestHeadersIfMissing(sortedHdrs []data.HeaderHandler, shardId uint32) error {
+	return bp.requestHeadersIfMissing(sortedHdrs, shardId)
+}
+
 func (mp *metaProcessor) SetShardBlockFinality(val uint32) {
 	mp.hdrsForCurrBlock.mutHdrsForBlock.Lock()
 	mp.shardBlockFinality = val
@@ -241,8 +248,8 @@ func (sp *shardProcessor) CheckHeaderBodyCorrelation(hdr *block.Header, body *bl
 	return sp.checkHeaderBodyCorrelation(hdr.MiniBlockHeaders, body)
 }
 
-func (sp *shardProcessor) CheckAndRequestIfMetaHeadersMissing(round uint64) {
-	sp.checkAndRequestIfMetaHeadersMissing(round)
+func (sp *shardProcessor) CheckAndRequestIfMetaHeadersMissing() {
+	sp.checkAndRequestIfMetaHeadersMissing()
 }
 
 func (sp *shardProcessor) GetHashAndHdrStruct(header data.HeaderHandler, hash []byte) *hashAndHdr {

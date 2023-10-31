@@ -2,12 +2,13 @@ package poolsCleaner
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
-	"github.com/Dharitri-org/sme-dharitri/core/close"
+	"github.com/Dharitri-org/sme-dharitri/core/closing"
 	"github.com/Dharitri-org/sme-dharitri/data/block"
 	"github.com/Dharitri-org/sme-dharitri/process"
 	"github.com/Dharitri-org/sme-dharitri/sharding"
@@ -17,7 +18,7 @@ import (
 
 var log = logger.GetOrCreate("process/block/poolsCleaner")
 
-var _ close.Closer = (*miniBlocksPoolsCleaner)(nil)
+var _ closing.Closer = (*miniBlocksPoolsCleaner)(nil)
 
 type mbInfo struct {
 	round           int64
@@ -99,7 +100,10 @@ func (mbpc *miniBlocksPoolsCleaner) receivedMiniBlock(key []byte, value interfac
 
 	miniBlock, ok := value.(*block.MiniBlock)
 	if !ok {
-		log.Warn("miniBlocksPoolsCleaner.receivedMiniBlock", "error", process.ErrWrongTypeAssertion)
+		log.Warn("miniBlocksPoolsCleaner.receivedMiniBlock",
+			"error", process.ErrWrongTypeAssertion,
+			"found type", fmt.Sprintf("%T", value),
+		)
 		return
 	}
 

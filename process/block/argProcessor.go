@@ -2,7 +2,9 @@ package block
 
 import (
 	"github.com/Dharitri-org/sme-dharitri/consensus"
-	"github.com/Dharitri-org/sme-dharitri/core/serviceContainer"
+	"github.com/Dharitri-org/sme-dharitri/core/fullHistory"
+	"github.com/Dharitri-org/sme-dharitri/core/indexer"
+	"github.com/Dharitri-org/sme-dharitri/core/statistics"
 	"github.com/Dharitri-org/sme-dharitri/data"
 	"github.com/Dharitri-org/sme-dharitri/data/state"
 	"github.com/Dharitri-org/sme-dharitri/data/typeConverters"
@@ -27,7 +29,6 @@ type ArgBaseProcessor struct {
 	FeeHandler             process.TransactionFeeHandler
 	Uint64Converter        typeConverters.Uint64ByteSliceConverter
 	RequestHandler         process.RequestHandler
-	Core                   serviceContainer.Core
 	BlockChainHook         process.BlockChainHookHandler
 	TxCoordinator          process.TransactionCoordinator
 	EpochStartTrigger      process.EpochStartTriggerHandler
@@ -39,7 +40,10 @@ type ArgBaseProcessor struct {
 	BlockChain             data.ChainHandler
 	StateCheckpointModulus uint
 	BlockSizeThrottler     process.BlockSizeThrottler
+	Indexer                indexer.Indexer
+	TpsBenchmark           statistics.TPSBenchmark
 	Version                string
+	HistoryRepository      fullHistory.HistoryRepository
 }
 
 // ArgShardProcessor holds all dependencies required by the process data factory in order to create

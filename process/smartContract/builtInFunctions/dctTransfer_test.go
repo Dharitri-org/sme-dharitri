@@ -63,17 +63,17 @@ func TestDCTTransfer_ProcessBuiltInFunctionSingleShard(t *testing.T) {
 
 	dctKey := append(dct.keyPrefix, key...)
 	dctToken := &DCToken{Value: big.NewInt(100)}
-	marshalledData, _ := marshalizer.Marshal(dctToken)
-	accSnd.DataTrieTracker().SaveKeyValue(dctKey, marshalledData)
+	marshaledData, _ := marshalizer.Marshal(dctToken)
+	accSnd.DataTrieTracker().SaveKeyValue(dctKey, marshaledData)
 
 	_, err = dct.ProcessBuiltinFunction(accSnd, accDst, input)
 	assert.Nil(t, err)
-	marshalledData, _ = accSnd.DataTrieTracker().RetrieveValue(dctKey)
-	_ = marshalizer.Unmarshal(dctToken, marshalledData)
+	marshaledData, _ = accSnd.DataTrieTracker().RetrieveValue(dctKey)
+	_ = marshalizer.Unmarshal(dctToken, marshaledData)
 	assert.True(t, dctToken.Value.Cmp(big.NewInt(90)) == 0)
 
-	marshalledData, _ = accDst.DataTrieTracker().RetrieveValue(dctKey)
-	_ = marshalizer.Unmarshal(dctToken, marshalledData)
+	marshaledData, _ = accDst.DataTrieTracker().RetrieveValue(dctKey)
+	_ = marshalizer.Unmarshal(dctToken, marshaledData)
 	assert.True(t, dctToken.Value.Cmp(big.NewInt(10)) == 0)
 }
 
@@ -96,13 +96,13 @@ func TestDCTTransfer_ProcessBuiltInFunctionSenderInShard(t *testing.T) {
 
 	dctKey := append(dct.keyPrefix, key...)
 	dctToken := &DCToken{Value: big.NewInt(100)}
-	marshalledData, _ := marshalizer.Marshal(dctToken)
-	accSnd.DataTrieTracker().SaveKeyValue(dctKey, marshalledData)
+	marshaledData, _ := marshalizer.Marshal(dctToken)
+	accSnd.DataTrieTracker().SaveKeyValue(dctKey, marshaledData)
 
 	_, err := dct.ProcessBuiltinFunction(accSnd, nil, input)
 	assert.Nil(t, err)
-	marshalledData, _ = accSnd.DataTrieTracker().RetrieveValue(dctKey)
-	_ = marshalizer.Unmarshal(dctToken, marshalledData)
+	marshaledData, _ = accSnd.DataTrieTracker().RetrieveValue(dctKey)
+	_ = marshalizer.Unmarshal(dctToken, marshaledData)
 	assert.True(t, dctToken.Value.Cmp(big.NewInt(90)) == 0)
 }
 
@@ -127,7 +127,7 @@ func TestDCTTransfer_ProcessBuiltInFunctionDestInShard(t *testing.T) {
 	assert.Nil(t, err)
 	dctKey := append(dct.keyPrefix, key...)
 	dctToken := &DCToken{}
-	marshalledData, _ := accDst.DataTrieTracker().RetrieveValue(dctKey)
-	_ = marshalizer.Unmarshal(dctToken, marshalledData)
+	marshaledData, _ := accDst.DataTrieTracker().RetrieveValue(dctKey)
+	_ = marshalizer.Unmarshal(dctToken, marshaledData)
 	assert.True(t, dctToken.Value.Cmp(big.NewInt(10)) == 0)
 }

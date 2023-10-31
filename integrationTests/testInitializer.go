@@ -70,6 +70,9 @@ var SyncDelay = time.Second * 2
 // P2pBootstrapDelay is used so that nodes have enough time to bootstrap
 var P2pBootstrapDelay = 5 * time.Second
 
+// InitialRating is used to initiate a node's info
+var InitialRating = uint32(50)
+
 var log = logger.GetOrCreate("integrationtests")
 
 // shuffler constants
@@ -111,7 +114,7 @@ func createP2PConfig(initialPeerList []string) config.P2PConfig {
 		KadDhtPeerDiscovery: config.KadDhtPeerDiscoveryConfig{
 			Enabled:                          true,
 			RefreshIntervalInSec:             2,
-			RandezVous:                       "/moa/kad/1.0.0",
+			ProtocolID:                       "/moa/kad/1.0.0",
 			InitialPeerList:                  initialPeerList,
 			BucketSize:                       100,
 			RoutingTableRefreshIntervalInSec: 100,
@@ -132,6 +135,7 @@ func CreateMessengerWithKadDht(initialAddr string) p2p.Messenger {
 		Marshalizer:   TestMarshalizer,
 		ListenAddress: libp2p.ListenLocalhostAddrWithIp4AndTcp,
 		P2pConfig:     createP2PConfig(initialAddresses),
+		SyncTimer:     &libp2p.LocalSyncTimer{},
 	}
 
 	libP2PMes, err := libp2p.NewNetworkMessenger(arg)
@@ -143,17 +147,18 @@ func CreateMessengerWithKadDht(initialAddr string) p2p.Messenger {
 }
 
 // CreateMessengerWithKadDhtAndProtocolID creates a new libp2p messenger with kad-dht peer discovery and peer ID
-func CreateMessengerWithKadDhtAndProtocolID(initialAddr string, randezVous string) p2p.Messenger {
+func CreateMessengerWithKadDhtAndProtocolID(initialAddr string, protocolID string) p2p.Messenger {
 	initialAddresses := make([]string, 0)
 	if len(initialAddr) > 0 {
 		initialAddresses = append(initialAddresses, initialAddr)
 	}
 	p2pConfig := createP2PConfig(initialAddresses)
-	p2pConfig.KadDhtPeerDiscovery.RandezVous = randezVous
+	p2pConfig.KadDhtPeerDiscovery.ProtocolID = protocolID
 	arg := libp2p.ArgsNetworkMessenger{
 		Marshalizer:   TestMarshalizer,
 		ListenAddress: libp2p.ListenLocalhostAddrWithIp4AndTcp,
 		P2pConfig:     p2pConfig,
+		SyncTimer:     &libp2p.LocalSyncTimer{},
 	}
 
 	libP2PMes, err := libp2p.NewNetworkMessenger(arg)
@@ -170,6 +175,7 @@ func CreateMessengerFromConfig(p2pConfig config.P2PConfig) p2p.Messenger {
 		Marshalizer:   TestMarshalizer,
 		ListenAddress: libp2p.ListenLocalhostAddrWithIp4AndTcp,
 		P2pConfig:     p2pConfig,
+		SyncTimer:     &libp2p.LocalSyncTimer{},
 	}
 
 	libP2PMes, err := libp2p.NewNetworkMessenger(arg)
@@ -199,6 +205,7 @@ func CreateMessengerWithNoDiscovery() p2p.Messenger {
 		Marshalizer:   TestMarshalizer,
 		ListenAddress: libp2p.ListenLocalhostAddrWithIp4AndTcp,
 		P2pConfig:     p2pConfig,
+		SyncTimer:     &libp2p.LocalSyncTimer{},
 	}
 
 	libP2PMes, err := libp2p.NewNetworkMessenger(arg)
@@ -554,6 +561,21 @@ func CreateFullGenesisBlocks(
 				MinPassThreshold: 50,
 				MinVetoThreshold: 50,
 			},
+			StakingSystemSCConfig: config.StakingSystemSCConfig{
+				GenesisNodePrice:                     "1000",
+				UnJailValue:                          "10",
+				MinStepValue:                         "10",
+				MinStakeValue:                        "1",
+				UnBondPeriod:                         1,
+				AuctionEnableNonce:                   10000000,
+				StakeEnableNonce:                     0,
+				NumRoundsWithoutBleed:                1,
+				MaximumPercentageToBleed:             1,
+				BleedPercentagePerRound:              1,
+				MaxNumberOfNodesForStake:             100,
+				NodesToSelectInAuction:               100,
+				ActivateBLSPubKeyMessageVerification: false,
+			},
 		},
 		AccountsParser:      accountsParser,
 		SmartContractParser: smartContractParser,
@@ -622,9 +644,25 @@ func CreateGenesisMetaBlock(
 				MinPassThreshold: 50,
 				MinVetoThreshold: 50,
 			},
+			StakingSystemSCConfig: config.StakingSystemSCConfig{
+				GenesisNodePrice:                     "1000",
+				UnJailValue:                          "10",
+				MinStepValue:                         "10",
+				MinStakeValue:                        "1",
+				UnBondPeriod:                         1,
+				AuctionEnableNonce:                   10000000,
+				StakeEnableNonce:                     0,
+				NumRoundsWithoutBleed:                1,
+				MaximumPercentageToBleed:             1,
+				BleedPercentagePerRound:              1,
+				MaxNumberOfNodesForStake:             100,
+				NodesToSelectInAuction:               100,
+				ActivateBLSPubKeyMessageVerification: false,
+			},
 		},
 		BlockSignKeyGen:    &mock.KeyGenMock{},
 		ImportStartHandler: &mock.ImportStartHandlerStub{},
+		GenesisNodePrice:   big.NewInt(1000),
 	}
 
 	if shardCoordinator.SelfId() != core.MetachainShardId {
@@ -648,7 +686,7 @@ func CreateGenesisMetaBlock(
 	nodesHandler, err := mock.NewNodesHandlerMock(nodesSetup)
 	log.LogIfError(err)
 
-	metaHdr, err := genesisProcess.CreateMetaGenesisBlock(argsMetaGenesis, nodesHandler)
+	metaHdr, err := genesisProcess.CreateMetaGenesisBlock(argsMetaGenesis, nodesHandler, shardCoordinator.SelfId())
 	log.LogIfError(err)
 
 	log.Info("meta genesis root hash", "hash", hex.EncodeToString(metaHdr.GetRootHash()))
@@ -792,17 +830,17 @@ func AdbEmulateBalanceTxExecution(accounts state.AccountsAdapter, acntSrc, acntD
 // CreateSimpleTxProcessor returns a transaction processor
 func CreateSimpleTxProcessor(accnts state.AccountsAdapter) process.TransactionProcessor {
 	shardCoordinator := mock.NewMultiShardsCoordinatorMock(1)
-	txProcessor, _ := txProc.NewTxProcessor(
-		accnts,
-		TestHasher,
-		TestAddressPubkeyConverter,
-		TestMarshalizer,
-		TestTxSignMarshalizer,
-		shardCoordinator,
-		&mock.SCProcessorMock{},
-		&mock.UnsignedTxHandlerMock{},
-		&mock.TxTypeHandlerMock{},
-		&mock.FeeHandlerStub{
+	argsNewTxProcessor := txProc.ArgsNewTxProcessor{
+		Accounts:         accnts,
+		Hasher:           TestHasher,
+		PubkeyConv:       TestAddressPubkeyConverter,
+		Marshalizer:      TestMarshalizer,
+		SignMarshalizer:  TestTxSignMarshalizer,
+		ShardCoordinator: shardCoordinator,
+		ScProcessor:      &mock.SCProcessorMock{},
+		TxFeeHandler:     &mock.UnsignedTxHandlerMock{},
+		TxTypeHandler:    &mock.TxTypeHandlerMock{},
+		EconomicsFee: &mock.FeeHandlerStub{
 			ComputeGasLimitCalled: func(tx process.TransactionWithFeeHandler) uint64 {
 				return tx.GetGasLimit()
 			},
@@ -816,11 +854,13 @@ func CreateSimpleTxProcessor(accnts state.AccountsAdapter) process.TransactionPr
 				return fee
 			},
 		},
-		&mock.IntermediateTransactionHandlerMock{},
-		&mock.IntermediateTransactionHandlerMock{},
-		smartContract.NewArgumentParser(),
-		&mock.IntermediateTransactionHandlerMock{},
-	)
+		ReceiptForwarder:  &mock.IntermediateTransactionHandlerMock{},
+		BadTxForwarder:    &mock.IntermediateTransactionHandlerMock{},
+		ArgsParser:        smartContract.NewArgumentParser(),
+		ScrForwarder:      &mock.IntermediateTransactionHandlerMock{},
+		DisabledRelayedTx: false,
+	}
+	txProcessor, _ := txProc.NewTxProcessor(argsNewTxProcessor)
 
 	return txProcessor
 }
@@ -938,7 +978,7 @@ func SyncBlock(
 		if err != nil {
 			log.Warn(fmt.Sprintf("SyncNode on round %v could not be synced. Error: %s", round, err.Error()))
 			assert.Fail(t, err.Error())
-			return
+			continue
 		}
 	}
 
@@ -1086,7 +1126,7 @@ func CreateNodes(
 	return nodes
 }
 
-// CreateNodes creates multiple nodes in different shards
+// CreateNodesWithFullGenesis creates multiple nodes in different shards
 func CreateNodesWithFullGenesis(
 	numOfShards int,
 	nodesPerShard int,
@@ -1790,7 +1830,7 @@ func GenValidatorsFromPubKeys(pubKeysMap map[uint32][]string, _ uint32) map[uint
 	for shardId, shardNodesPks := range pubKeysMap {
 		var shardValidators []sharding.GenesisNodeInfoHandler
 		for i := 0; i < len(shardNodesPks); i++ {
-			v := mock.NewNodeInfo([]byte(shardNodesPks[i][:32]), []byte(shardNodesPks[i]), shardId)
+			v := mock.NewNodeInfo([]byte(shardNodesPks[i][:32]), []byte(shardNodesPks[i]), shardId, InitialRating)
 			shardValidators = append(shardValidators, v)
 		}
 		validatorsMap[shardId] = shardValidators
@@ -1809,7 +1849,7 @@ func GenValidatorsFromPubKeysAndTxPubKeys(
 	for shardId, shardNodesPks := range blsPubKeysMap {
 		var shardValidators []sharding.GenesisNodeInfoHandler
 		for i := 0; i < len(shardNodesPks); i++ {
-			v := mock.NewNodeInfo([]byte(txPubKeysMap[shardId][i]), []byte(shardNodesPks[i]), shardId)
+			v := mock.NewNodeInfo([]byte(txPubKeysMap[shardId][i]), []byte(shardNodesPks[i]), shardId, InitialRating)
 			shardValidators = append(shardValidators, v)
 		}
 		validatorsMap[shardId] = shardValidators

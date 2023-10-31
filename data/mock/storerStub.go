@@ -2,21 +2,28 @@ package mock
 
 // StorerStub -
 type StorerStub struct {
-	PutCalled          func(key, data []byte) error
-	GetCalled          func(key []byte) ([]byte, error)
-	GetFromEpochCalled func(key []byte, epoch uint32) ([]byte, error)
-	HasCalled          func(key []byte) error
-	HasInEpochCalled   func(key []byte, epoch uint32) error
-	SearchFirstCalled  func(key []byte) ([]byte, error)
-	RemoveCalled       func(key []byte) error
-	ClearCacheCalled   func()
-	CloseCalled        func() error
-	DestroyUnitCalled  func() error
+	PutCalled              func(key, data []byte) error
+	GetCalled              func(key []byte) ([]byte, error)
+	GetFromEpochCalled     func(key []byte, epoch uint32) ([]byte, error)
+	HasCalled              func(key []byte) error
+	HasInEpochCalled       func(key []byte, epoch uint32) error
+	SearchFirstCalled      func(key []byte) ([]byte, error)
+	RemoveCalled           func(key []byte) error
+	ClearCacheCalled       func()
+	CloseCalled            func() error
+	DestroyUnitCalled      func() error
+	RangeKeysCalled        func(handler func(key []byte, val []byte) bool)
+	GetBulkFromEpochCalled func(keys [][]byte, epoch uint32) (map[string][]byte, error)
 }
 
 // GetFromEpoch -
 func (ss *StorerStub) GetFromEpoch(key []byte, epoch uint32) ([]byte, error) {
 	return ss.GetFromEpochCalled(key, epoch)
+}
+
+// GetBulkFromEpoch -
+func (ss *StorerStub) GetBulkFromEpoch(keys [][]byte, epoch uint32) (map[string][]byte, error) {
+	return ss.GetBulkFromEpochCalled(keys, epoch)
 }
 
 // HasInEpoch -
@@ -65,6 +72,13 @@ func (ss *StorerStub) ClearCache() {
 // DestroyUnit -
 func (ss *StorerStub) DestroyUnit() error {
 	return ss.DestroyUnitCalled()
+}
+
+// RangeKeys -
+func (ss *StorerStub) RangeKeys(handler func(key []byte, val []byte) bool) {
+	if ss.RangeKeysCalled != nil {
+		ss.RangeKeysCalled(handler)
+	}
 }
 
 // IsInterfaceNil returns true if there is no value under the interface

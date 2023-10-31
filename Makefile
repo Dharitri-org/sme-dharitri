@@ -69,8 +69,11 @@ ifndef CORE_PATH
 	$(error CORE_PATH is undefined)
 endif
 	# When referencing a non-release version, add the commit hash, like this:
-	#go get github.com/Dharitri-org/sme-core-vm-go/cmd/core@...
+	# go get github.com/Dharitri-org/sme-core-vm-go/cmd/core@...
 	# When referencing a released version, use this instead:
 	go get github.com/Dharitri-org/sme-core-vm-go/cmd/core@$(shell cat go.mod | grep core-wasm-vm | sed 's/.* //')
 	go build -o ${CORE_PATH} github.com/Dharitri-org/sme-core-vm-go/cmd/core
 	stat ${CORE_PATH}
+
+cli-docs:
+	cd ./cmd && bash ./CLI.md.sh

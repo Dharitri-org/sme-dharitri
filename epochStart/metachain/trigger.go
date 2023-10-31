@@ -9,7 +9,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/config"
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
-	"github.com/Dharitri-org/sme-dharitri/core/close"
+	"github.com/Dharitri-org/sme-dharitri/core/closing"
 	"github.com/Dharitri-org/sme-dharitri/data"
 	"github.com/Dharitri-org/sme-dharitri/data/block"
 	"github.com/Dharitri-org/sme-dharitri/dataRetriever"
@@ -29,7 +29,7 @@ var _ dataRetriever.EpochHandler = (*trigger)(nil)
 var _ epochStart.TriggerHandler = (*trigger)(nil)
 var _ process.EpochStartTriggerHandler = (*trigger)(nil)
 var _ process.EpochBootstrapper = (*trigger)(nil)
-var _ close.Closer = (*trigger)(nil)
+var _ closing.Closer = (*trigger)(nil)
 
 const minimumNonceToStartEpoch = 4
 

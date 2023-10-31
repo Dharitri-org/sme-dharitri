@@ -24,6 +24,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/data/rewardTx"
 	"github.com/Dharitri-org/sme-dharitri/data/smartContractResult"
 	"github.com/Dharitri-org/sme-dharitri/data/transaction"
+	"github.com/Dharitri-org/sme-dharitri/testscommon"
 	logger "github.com/Dharitri-org/sme-logger"
 	"github.com/elastic/go-elasticsearch/v7/esapi"
 	"github.com/stretchr/testify/require"
@@ -254,7 +255,7 @@ func TestElasticsearch_saveShardStatistics_reqError(t *testing.T) {
 	_ = logger.SetLogLevel("core/indexer:TRACE")
 	_ = logger.AddLogObserver(output, &logger.PlainFormatter{})
 
-	tpsBenchmark := &mock.TpsBenchmarkMock{}
+	tpsBenchmark := &testscommon.TpsBenchmarkMock{}
 	metaBlock := &dataBlock.MetaBlock{
 		TxCount: 2, Nonce: 1,
 		ShardInfo: []dataBlock.ShardData{{HeaderHash: []byte("hash")}},
@@ -281,7 +282,7 @@ func TestElasticsearch_saveShardStatistics_reqError(t *testing.T) {
 }
 
 func TestElasticsearch_saveShardStatistics(t *testing.T) {
-	tpsBenchmark := &mock.TpsBenchmarkMock{}
+	tpsBenchmark := &testscommon.TpsBenchmarkMock{}
 	metaBlock := &dataBlock.MetaBlock{
 		TxCount: 2, Nonce: 1,
 		ShardInfo: []dataBlock.ShardData{{HeaderHash: []byte("hash")}},

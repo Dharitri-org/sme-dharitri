@@ -2,12 +2,14 @@ package mock
 
 import (
 	"github.com/Dharitri-org/sme-dharitri/data"
+	"github.com/Dharitri-org/sme-dharitri/process"
 )
 
 // ValidityAttesterStub -
 type ValidityAttesterStub struct {
-	CheckBlockAgainstRounderCalled func(headerHandler data.HeaderHandler) error
-	CheckBlockAgainstFinalCalled   func(headerHandler data.HeaderHandler) error
+	CheckBlockAgainstRounderCalled   func(headerHandler data.HeaderHandler) error
+	CheckBlockAgainstFinalCalled     func(headerHandler data.HeaderHandler) error
+	CheckBlockAgainstWhitelistCalled func(interceptedData process.InterceptedData) bool
 }
 
 // CheckBlockAgainstRounder -
@@ -26,6 +28,15 @@ func (vas *ValidityAttesterStub) CheckBlockAgainstFinal(headerHandler data.Heade
 	}
 
 	return nil
+}
+
+// CheckBlockAgainstWhitelist -
+func (vas *ValidityAttesterStub) CheckBlockAgainstWhitelist(interceptedData process.InterceptedData) bool {
+	if vas.CheckBlockAgainstWhitelistCalled != nil {
+		return vas.CheckBlockAgainstWhitelistCalled(interceptedData)
+	}
+
+	return false
 }
 
 // IsInterfaceNil -

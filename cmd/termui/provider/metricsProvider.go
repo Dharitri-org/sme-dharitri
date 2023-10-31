@@ -6,7 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
-    "github.com/Dharitri-org/sme-logger"    
+
+	logger "github.com/Dharitri-org/sme-logger"
 )
 
 var log = logger.GetOrCreate("termui/provider")

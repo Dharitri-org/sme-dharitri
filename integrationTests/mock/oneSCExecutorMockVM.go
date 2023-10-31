@@ -87,6 +87,7 @@ func (vm *OneSCExecutorMockVM) RunSmartContractCreate(input *vmcommon.ContractCr
 
 	scOutputAccount := &vmcommon.OutputAccount{
 		Nonce:        0,
+		CodeMetadata: input.ContractCodeMetadata,
 		Code:         input.ContractCode,
 		BalanceDelta: input.CallValue,
 		Address:      newSCAddr,

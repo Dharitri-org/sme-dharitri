@@ -145,6 +145,11 @@ func (u *Unit) Close() error {
 	return nil
 }
 
+// RangeKeys can iterate over the persisted (key, value) pairs calling the provided handler
+func (u *Unit) RangeKeys(handler func(key []byte, value []byte) bool) {
+	u.persister.RangeKeys(handler)
+}
+
 // Get searches the key in the cache. In case it is not found, it searches
 // for the key in bloom filter first and if found
 // it further searches it in the associated database.
@@ -183,6 +188,23 @@ func (u *Unit) Get(key []byte) ([]byte, error) {
 // GetFromEpoch will call the Get method as this storer doesn't handle epochs
 func (u *Unit) GetFromEpoch(key []byte, _ uint32) ([]byte, error) {
 	return u.Get(key)
+}
+
+// GetBulkFromEpoch will call the Get method for all keys as this storer doesn't handle epochs
+func (u *Unit) GetBulkFromEpoch(keys [][]byte, _ uint32) (map[string][]byte, error) {
+	retMap := make(map[string][]byte, 0)
+	for _, key := range keys {
+		value, err := u.Get(key)
+		if err != nil {
+			log.Warn("cannot get key from unit",
+				"key", key,
+				"error", err.Error(),
+			)
+			continue
+		}
+		retMap[string(key)] = value
+	}
+	return retMap, nil
 }
 
 // Has checks if the key is in the Unit.

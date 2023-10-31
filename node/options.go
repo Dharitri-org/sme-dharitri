@@ -8,6 +8,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/consensus/spos"
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
+	"github.com/Dharitri-org/sme-dharitri/core/fullHistory"
 	"github.com/Dharitri-org/sme-dharitri/core/indexer"
 	"github.com/Dharitri-org/sme-dharitri/crypto"
 	"github.com/Dharitri-org/sme-dharitri/data"
@@ -697,6 +698,28 @@ func WithWatchdogTimer(watchdog core.WatchdogTimer) Option {
 		}
 
 		n.watchdog = watchdog
+		return nil
+	}
+}
+
+// WithPeerSignatureHandler sets up a peerSignatureHandler for the Node
+func WithPeerSignatureHandler(peerSignatureHandler crypto.PeerSignatureHandler) Option {
+	return func(n *Node) error {
+		if check.IfNil(peerSignatureHandler) {
+			return ErrNilPeerSignatureHandler
+		}
+		n.peerSigHandler = peerSignatureHandler
+		return nil
+	}
+}
+
+// WithHistoryRepository sets up a history repository for the node
+func WithHistoryRepository(historyRepo fullHistory.HistoryRepository) Option {
+	return func(n *Node) error {
+		if check.IfNil(historyRepo) {
+			return ErrNilHistoryRepository
+		}
+		n.historyRepository = historyRepo
 		return nil
 	}
 }

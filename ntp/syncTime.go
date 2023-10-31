@@ -12,13 +12,13 @@ import (
 
 	"github.com/Dharitri-org/sme-dharitri/config"
 	"github.com/Dharitri-org/sme-dharitri/core"
-	"github.com/Dharitri-org/sme-dharitri/core/close"
+	"github.com/Dharitri-org/sme-dharitri/core/closing"
 	logger "github.com/Dharitri-org/sme-logger"
 	"github.com/beevik/ntp"
 )
 
 var _ SyncTimer = (*syncTime)(nil)
-var _ close.Closer = (*syncTime)(nil)
+var _ closing.Closer = (*syncTime)(nil)
 
 var log = logger.GetOrCreate("ntp")
 

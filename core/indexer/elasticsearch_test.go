@@ -13,6 +13,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/core/indexer"
 	"github.com/Dharitri-org/sme-dharitri/core/mock"
 	"github.com/Dharitri-org/sme-dharitri/data/block"
+	"github.com/Dharitri-org/sme-dharitri/testscommon"
 	logger "github.com/Dharitri-org/sme-logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -142,7 +143,7 @@ func TestElasticIndexer_UpdateTPS(t *testing.T) {
 	ei, err := indexer.NewElasticIndexer(arguments)
 	require.Nil(t, err)
 
-	tpsBench := mock.TpsBenchmarkMock{}
+	tpsBench := testscommon.TpsBenchmarkMock{}
 	tpsBench.Update(newTestMetaBlock())
 
 	ei.UpdateTPS(&tpsBench)

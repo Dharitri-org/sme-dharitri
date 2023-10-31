@@ -3,12 +3,13 @@ package poolsCleaner
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-dharitri/core/check"
-	"github.com/Dharitri-org/sme-dharitri/core/close"
+	"github.com/Dharitri-org/sme-dharitri/core/closing"
 	"github.com/Dharitri-org/sme-dharitri/data"
 	"github.com/Dharitri-org/sme-dharitri/dataRetriever"
 	"github.com/Dharitri-org/sme-dharitri/process"
@@ -17,7 +18,7 @@ import (
 	"github.com/Dharitri-org/sme-dharitri/storage/txcache"
 )
 
-var _ close.Closer = (*txsPoolsCleaner)(nil)
+var _ closing.Closer = (*txsPoolsCleaner)(nil)
 
 // sleepTime defines the time between each iteration made in clean...Pools methods
 const sleepTime = time.Minute
@@ -136,22 +137,39 @@ func (tpc *txsPoolsCleaner) receivedBlockTx(key []byte, value interface{}) {
 
 	wrappedTx, ok := value.(*txcache.WrappedTransaction)
 	if !ok {
-		log.Warn("txsPoolsCleaner.receivedBlockTx", "error", process.ErrWrongTypeAssertion)
+		log.Warn("txsPoolsCleaner.receivedBlockTx",
+			"error", process.ErrWrongTypeAssertion,
+			"found type", fmt.Sprintf("%T", value),
+		)
 		return
 	}
 
 	tpc.processReceivedTx(key, wrappedTx.SenderShardID, wrappedTx.ReceiverShardID, blockTx)
 }
 
-func (tpc *txsPoolsCleaner) receivedRewardTx(key []byte, _ interface{}) {
+func (tpc *txsPoolsCleaner) receivedRewardTx(key []byte, value interface{}) {
 	if key == nil {
 		return
 	}
 
 	log.Trace("txsPoolsCleaner.receivedRewardTx", "hash", key)
 
+	tx, ok := value.(data.TransactionHandler)
+	if !ok {
+		log.Warn("txsPoolsCleaner.receivedRewardTx",
+			"error", process.ErrWrongTypeAssertion,
+			"found type", fmt.Sprintf("%T", value),
+		)
+		return
+	}
+
 	senderShardID := core.MetachainShardId
-	receiverShardID := tpc.shardCoordinator.SelfId()
+	receiverShardID, err := tpc.getShardFromAddress(tx.GetRcvAddr())
+	if err != nil {
+		log.Debug("txsPoolsCleaner.receivedRewardTx", "error", err.Error())
+		return
+	}
+
 	tpc.processReceivedTx(key, senderShardID, receiverShardID, rewardTx)
 }
 
@@ -164,7 +182,10 @@ func (tpc *txsPoolsCleaner) receivedUnsignedTx(key []byte, value interface{}) {
 
 	tx, ok := value.(data.TransactionHandler)
 	if !ok {
-		log.Warn("txsPoolsCleaner.receivedUnsignedTx", "error", process.ErrWrongTypeAssertion)
+		log.Warn("txsPoolsCleaner.receivedUnsignedTx",
+			"error", process.ErrWrongTypeAssertion,
+			"found type", fmt.Sprintf("%T", value),
+		)
 		return
 	}
 

@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/ioutil" 
+	"io/ioutil"
 	"reflect"
 	"testing"
 
